@@ -572,8 +572,24 @@ stages:
           SUBSCRIPTION_SUFFIX=$(echo "$SUBSCRIPTION_ID" | tr -d '-' | cut -c1-8)
           STORAGE_ACCOUNT="aigov${ENVIRONMENT}${SUBSCRIPTION_SUFFIX}"
           RESOURCE_GROUP="rg-${LANDING_ZONE}-ai-${ENVIRONMENT}"
+          WORKSPACE_NAME="aml-${ENVIRONMENT}"
+          WORKSPACE_RESOURCE_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.MachineLearningServices/workspaces/${WORKSPACE_NAME}"
 
           cleanup() {
+            EXIT_CODE=$?
+            set +e
+
+            echo "======================================"
+            echo "Restoring Azure ML workspace private access"
+            echo "======================================"
+
+            az resource update \
+              --ids "$WORKSPACE_RESOURCE_ID" \
+              --set properties.publicNetworkAccess=Disabled \
+              --output none
+
+            echo "Azure ML workspace public access disabled."
+
             echo "======================================"
             echo "Restoring Storage private access"
             echo "======================================"
@@ -584,6 +600,8 @@ stages:
               --public-network-access Disabled
 
             echo "Storage public access disabled."
+
+            return "$EXIT_CODE"
           }
 
           trap cleanup EXIT
@@ -611,10 +629,24 @@ stages:
 
 
           echo "======================================"
-          echo "Waiting for Storage configuration"
+          echo "Temporarily enabling Azure ML workspace access"
           echo "======================================"
 
-          sleep 15
+          az resource update \
+            --ids "$WORKSPACE_RESOURCE_ID" \
+            --set \
+              properties.publicNetworkAccess=Enabled \
+              properties.managedNetwork.isolationMode=Disabled \
+            --output none
+
+          echo "Azure ML workspace public access enabled."
+
+
+          echo "======================================"
+          echo "Waiting for network configuration"
+          echo "======================================"
+
+          sleep 30
 
 
           echo "======================================"
@@ -644,7 +676,7 @@ stages:
 
           export AZURE_RESOURCE_GROUP="$RESOURCE_GROUP"
 
-          export AZURE_ML_WORKSPACE="aml-${ENVIRONMENT}"
+          export AZURE_ML_WORKSPACE="$WORKSPACE_NAME"
 
           echo "Subscription:"
           echo "$AZURE_SUBSCRIPTION_ID"
