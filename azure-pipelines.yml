@@ -381,8 +381,8 @@ stages:
             -var='hub_address_space=${{ parameters.hubAddressSpace }}' \
             -var='general_spoke_address_space=${{ parameters.generalSpokeAddressSpace }}' \
             -var='ai_spoke_address_space=${{ parameters.aiSpokeAddressSpace }}' \
-            -var='enableMonitoring=${{ parameters.enableMonitoring }}' \
-            -var='enablePrivateEndpoint=${{ parameters.enablePrivateEndpoint }}' \
+            -var='enableMonitoring=${{ lower(parameters.enableMonitoring) }}' \
+            -var='enablePrivateEndpoint=${{ lower(parameters.enablePrivateEndpoint) }}' \
             -out=tfplan
 
 
