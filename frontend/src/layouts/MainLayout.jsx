@@ -9,6 +9,7 @@ import DeploymentDashboard from "../pages/DeploymentDashboard";
 import GovernanceCenter from "../pages/GovernanceCenter";
 import UsersRoles from "../pages/UsersRoles";
 import AzureDevOpsOnboarding from "../pages/AzureDevOpsOnboarding";
+import ModelPlayground from "../pages/ModelPlayground";
 
 function MainLayout({ user, onLogout }) {
 
@@ -34,6 +35,10 @@ function MainLayout({ user, onLogout }) {
 
   {currentPage === "dashboard" && (
     <DeploymentDashboard />
+  )}
+
+  {currentPage === "playground" && (
+    <ModelPlayground />
   )}
 
   {currentPage === "governance" && (

@@ -55,4 +55,19 @@ export const saveAzureDevOpsConnection = async (connection) => {
   return response.data;
 };
 
+export const getPlaygroundDeployments = async () => {
+  const response = await API.get("/playground/deployments");
+  return response.data;
+};
+
+export const invokePlaygroundModel = async (request) => {
+  const response = await API.post("/playground/invoke", request);
+  return response.data;
+};
+
+export const getPlaygroundHistory = async (limit = 20) => {
+  const response = await API.get("/playground/history", { params: { limit } });
+  return response.data;
+};
+
 export default API;

@@ -13,6 +13,7 @@ from routes.governance import router as governance_router
 from routes.auth import router as auth_router
 from routes.users import router as users_router
 from routes.onboarding import router as onboarding_router
+from routes.playground import router as playground_router
 
 
 # ------------------------------------------
@@ -64,6 +65,8 @@ app.include_router(auth_router)
 app.include_router(users_router)
 
 app.include_router(onboarding_router)
+
+app.include_router(playground_router)
 
 
 # ------------------------------------------

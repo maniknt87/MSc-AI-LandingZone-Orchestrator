@@ -91,6 +91,30 @@ def initialize_database():
         """
     )
 
+    # --------------------------------------
+    # Model Playground Invocation History
+    # --------------------------------------
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS inference_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_id TEXT UNIQUE NOT NULL,
+            username TEXT NOT NULL,
+            endpoint_name TEXT NOT NULL,
+            deployment_name TEXT NOT NULL,
+            workload TEXT NOT NULL,
+            input_preview TEXT NOT NULL,
+            prediction TEXT,
+            confidence REAL,
+            latency_ms INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            error_message TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
         # --------------------------------------
     # Add Allowed Region to Existing Users
     # --------------------------------------

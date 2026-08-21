@@ -10,10 +10,12 @@ import GroupRoundedIcon from "@mui/icons-material/GroupRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import SettingsEthernetRoundedIcon from "@mui/icons-material/SettingsEthernetRounded";
+import ScienceRoundedIcon from "@mui/icons-material/ScienceRounded";
 
 const navItems = [
   ["planner", "New deployment", RocketLaunchRoundedIcon],
   ["dashboard", "Deployments", SpaceDashboardRoundedIcon],
+  ["playground", "Model playground", ScienceRoundedIcon],
   ["governance", "Governance", GppGoodRoundedIcon],
   ["users", "Users & roles", GroupRoundedIcon],
   ["onboarding", "Azure DevOps", SettingsEthernetRoundedIcon],
