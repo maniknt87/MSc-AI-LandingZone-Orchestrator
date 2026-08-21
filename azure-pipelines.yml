@@ -822,6 +822,41 @@ stages:
 
 
           echo "======================================"
+          echo "Deleting Azure ML online endpoints"
+          echo "======================================"
+
+          AI_RESOURCE_GROUP="rg-${{ lower(parameters.deploymentName) }}-ai-${{ lower(parameters.environment) }}"
+          AI_WORKSPACE="aml-${{ lower(parameters.environment) }}"
+
+          if ! az extension show --name ml --output none 2>/dev/null; then
+            az extension add --name ml --yes
+          fi
+
+          if az ml workspace show \
+            --name "$AI_WORKSPACE" \
+            --resource-group "$AI_RESOURCE_GROUP" \
+            --output none 2>/dev/null
+          then
+            while IFS= read -r ENDPOINT_NAME; do
+              if [ -n "$ENDPOINT_NAME" ]; then
+                echo "Deleting endpoint: $ENDPOINT_NAME"
+                az ml online-endpoint delete \
+                  --name "$ENDPOINT_NAME" \
+                  --resource-group "$AI_RESOURCE_GROUP" \
+                  --workspace-name "$AI_WORKSPACE" \
+                  --yes
+              fi
+            done < <(az ml online-endpoint list \
+              --resource-group "$AI_RESOURCE_GROUP" \
+              --workspace-name "$AI_WORKSPACE" \
+              --query '[].name' \
+              --output tsv)
+          else
+            echo "Azure ML workspace is absent; no endpoints to delete."
+          fi
+
+
+          echo "======================================"
           echo "DESTROYING AZURE LANDING ZONE"
           echo "======================================"
 
