@@ -571,6 +571,7 @@ stages:
           SUBSCRIPTION_ID=$(az account show --query id --output tsv)
           SUBSCRIPTION_SUFFIX=$(echo "$SUBSCRIPTION_ID" | tr -d '-' | cut -c1-8)
           STORAGE_ACCOUNT="aigov${ENVIRONMENT}${SUBSCRIPTION_SUFFIX}"
+          ACR_NAME="acrai${ENVIRONMENT}${SUBSCRIPTION_SUFFIX}"
           RESOURCE_GROUP="rg-${LANDING_ZONE}-ai-${ENVIRONMENT}"
           WORKSPACE_NAME="aml-${ENVIRONMENT}"
           WORKSPACE_RESOURCE_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.MachineLearningServices/workspaces/${WORKSPACE_NAME}"
@@ -589,6 +590,19 @@ stages:
               --output none
 
             echo "Azure ML workspace public access disabled."
+
+            echo "======================================"
+            echo "Restoring Container Registry private access"
+            echo "======================================"
+
+            az acr update \
+              --name "$ACR_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --default-action Deny \
+              --public-network-enabled false \
+              --output none
+
+            echo "Container Registry public access disabled."
 
             echo "======================================"
             echo "Restoring Storage private access"
@@ -640,6 +654,20 @@ stages:
             --output none
 
           echo "Azure ML workspace public access enabled."
+
+
+          echo "======================================"
+          echo "Temporarily enabling Container Registry access"
+          echo "======================================"
+
+          az acr update \
+            --name "$ACR_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --public-network-enabled true \
+            --default-action Allow \
+            --output none
+
+          echo "Container Registry public access enabled."
 
 
           echo "======================================"
