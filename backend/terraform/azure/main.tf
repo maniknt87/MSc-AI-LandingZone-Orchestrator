@@ -19,6 +19,10 @@ provider "azurerm" {
       purge_soft_delete_on_destroy    = false
       recover_soft_deleted_key_vaults = true
     }
+
+    machine_learning {
+      purge_soft_deleted_workspace_on_destroy = true
+    }
   }
 }
 
