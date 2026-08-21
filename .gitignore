@@ -24,3 +24,6 @@ tfplan
 # Local tools
 .vscode/
 .idea/
+
+# Application database
+backend/database/*.db
