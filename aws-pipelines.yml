@@ -54,8 +54,8 @@ variables:
   awsServiceConnection: 'AWS-Terraform-Connection'
   # Define these as secured pipeline variables or in a variable group.
   # awsTfStateBucket must already exist and have versioning/encryption enabled.
-  awsTfStateBucket: 'REPLACE_WITH_TERRAFORM_STATE_BUCKET'
-  awsTfLockTable: 'REPLACE_WITH_TERRAFORM_LOCK_TABLE'
+  awsTfStateBucket: 'mani-terraform-state-699754982224'
+  awsTfLockTable: 'mani-terraform-lock'
 
 stages:
 - stage: Validate
