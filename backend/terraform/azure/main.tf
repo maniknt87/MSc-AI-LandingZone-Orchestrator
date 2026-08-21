@@ -378,7 +378,7 @@ module "ai_ml" {
 
   storage_account_id = module.ai_storage.storage_account_id
 
-  key_vault_name            = "kvai${lower(var.environment)}${substr(replace(data.azurerm_client_config.current.subscription_id, "-", ""), 0, 8)}"
+  key_vault_name            = "kvai${lower(var.environment)}${substr(replace(data.azurerm_client_config.current.subscription_id, "-", ""), 0, 8)}a"
   application_insights_name = "appi-ai-${lower(var.environment)}"
 
   private_endpoint_subnet_id = module.ai_spoke.subnet_ids["PrivateEndpointSubnet"]
