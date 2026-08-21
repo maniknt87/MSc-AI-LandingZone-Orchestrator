@@ -1,0 +1,159 @@
+trigger: none
+pr: none
+
+pool:
+  name: devops-lin-agent
+
+parameters:
+- name: cloud
+  type: string
+  default: 'AWS'
+- name: action
+  type: string
+  default: apply
+  values: [apply, destroy]
+- name: deploymentName
+  type: string
+  default: 'customer-ai-platform'
+- name: environment
+  type: string
+  default: 'Development'
+- name: region
+  type: string
+  default: 'South India'
+- name: workload
+  type: string
+  default: 'sentiment-analysis'
+- name: modelId
+  type: string
+  default: 'sentiment-v1'
+- name: modelName
+  type: string
+  default: 'Sentiment Analysis'
+- name: vmSize
+  type: string
+  default: 'ml.m5.xlarge'
+- name: hubAddressSpace
+  type: string
+  default: '10.0.0.0/16'
+- name: generalSpokeAddressSpace
+  type: string
+  default: '10.1.0.0/16'
+- name: aiSpokeAddressSpace
+  type: string
+  default: '10.2.0.0/16'
+- name: enableMonitoring
+  type: boolean
+  default: true
+- name: enablePrivateEndpoint
+  type: boolean
+  default: true
+
+variables:
+  terraformDirectory: 'backend/terraform/aws'
+  awsServiceConnection: 'AWS-Terraform-Connection'
+  # Define these as secured pipeline variables or in a variable group.
+  # awsTfStateBucket must already exist and have versioning/encryption enabled.
+  awsTfStateBucket: 'REPLACE_WITH_TERRAFORM_STATE_BUCKET'
+  awsTfLockTable: 'REPLACE_WITH_TERRAFORM_LOCK_TABLE'
+
+stages:
+- stage: Validate
+  jobs:
+  - job: Validate
+    steps:
+    - checkout: self
+    - bash: |
+        set -euo pipefail
+        test '${{ parameters.cloud }}' = 'AWS'
+        terraform fmt -check -recursive "$(terraformDirectory)"
+        terraform -chdir="$(terraformDirectory)" init -backend=false -input=false
+        terraform -chdir="$(terraformDirectory)" validate
+      displayName: 'Validate AWS request and Terraform'
+
+- stage: Plan
+  dependsOn: Validate
+  jobs:
+  - job: TerraformPlan
+    steps:
+    - checkout: self
+    - task: AWSShellScript@1
+      displayName: 'Create AWS Terraform plan'
+      inputs:
+        awsCredentials: '$(awsServiceConnection)'
+        regionName: 'ap-south-1'
+        scriptType: inline
+        inlineScript: |
+          set -euo pipefail
+          case '${{ parameters.region }}' in
+            'South India') AWS_REGION='ap-south-1' ;;
+            'US East (N. Virginia)') AWS_REGION='us-east-1' ;;
+            'Europe (Ireland)') AWS_REGION='eu-west-1' ;;
+            *) echo 'Region is not approved by this pipeline.'; exit 1 ;;
+          esac
+          test "$(awsTfStateBucket)" != 'REPLACE_WITH_TERRAFORM_STATE_BUCKET'
+          test "$(awsTfLockTable)" != 'REPLACE_WITH_TERRAFORM_LOCK_TABLE'
+          STATE_KEY="aws-${{ lower(parameters.deploymentName) }}-${{ lower(parameters.environment) }}.tfstate"
+          terraform -chdir="$(terraformDirectory)" init -reconfigure -input=false \
+            -backend-config="bucket=$(awsTfStateBucket)" \
+            -backend-config="key=$STATE_KEY" \
+            -backend-config="region=$AWS_REGION" \
+            -backend-config="dynamodb_table=$(awsTfLockTable)" \
+            -backend-config="encrypt=true"
+          PLAN_MODE=''
+          if [ '${{ parameters.action }}' = 'destroy' ]; then PLAN_MODE='-destroy'; fi
+          terraform -chdir="$(terraformDirectory)" plan \
+            $PLAN_MODE -input=false -out=tfplan \
+            -var="aws_region=$AWS_REGION" \
+            -var='deployment_name=${{ parameters.deploymentName }}' \
+            -var='environment=${{ parameters.environment }}' \
+            -var='workload=${{ parameters.workload }}' \
+            -var='model_id=${{ parameters.modelId }}' \
+            -var='model_name=${{ parameters.modelName }}' \
+            -var='instance_type=${{ parameters.vmSize }}' \
+            -var='hub_address_space=${{ parameters.hubAddressSpace }}' \
+            -var='general_spoke_address_space=${{ parameters.generalSpokeAddressSpace }}' \
+            -var='ai_spoke_address_space=${{ parameters.aiSpokeAddressSpace }}' \
+            -var='enable_monitoring=${{ parameters.enableMonitoring }}' \
+            -var='enable_private_endpoint=${{ parameters.enablePrivateEndpoint }}'
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: '$(terraformDirectory)/tfplan'
+        artifact: 'aws-terraform-plan'
+
+- stage: Apply
+  dependsOn: Plan
+  jobs:
+  - deployment: TerraformApply
+    environment: 'aws-${{ lower(parameters.environment) }}'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifactName: 'aws-terraform-plan'
+              targetPath: '$(Pipeline.Workspace)/aws-terraform-plan'
+          - task: AWSShellScript@1
+            displayName: 'Apply approved AWS plan'
+            inputs:
+              awsCredentials: '$(awsServiceConnection)'
+              regionName: 'ap-south-1'
+              scriptType: inline
+              inlineScript: |
+                set -euo pipefail
+                case '${{ parameters.region }}' in
+                  'South India') AWS_REGION='ap-south-1' ;;
+                  'US East (N. Virginia)') AWS_REGION='us-east-1' ;;
+                  'Europe (Ireland)') AWS_REGION='eu-west-1' ;;
+                esac
+                STATE_KEY="aws-${{ lower(parameters.deploymentName) }}-${{ lower(parameters.environment) }}.tfstate"
+                terraform -chdir="$(terraformDirectory)" init -reconfigure -input=false \
+                  -backend-config="bucket=$(awsTfStateBucket)" \
+                  -backend-config="key=$STATE_KEY" \
+                  -backend-config="region=$AWS_REGION" \
+                  -backend-config="dynamodb_table=$(awsTfLockTable)" \
+                  -backend-config="encrypt=true"
+                cp "$(Pipeline.Workspace)/aws-terraform-plan/tfplan" "$(terraformDirectory)/tfplan"
+                terraform -chdir="$(terraformDirectory)" apply -input=false tfplan

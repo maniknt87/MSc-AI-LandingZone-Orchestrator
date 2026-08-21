@@ -1,0 +1,785 @@
+trigger: none
+pr: none
+
+pool:
+  name: devops-lin-agent
+
+parameters:
+- name: cloud
+  type: string
+  default: 'Azure'
+- name: action
+  displayName: 'Terraform Action'
+  type: string
+  default: apply
+  values:
+  - apply
+  - destroy
+- name: deploymentName
+  type: string
+  default: 'customer-ai-platform'
+- name: environment
+  type: string
+  default: 'Development'
+- name: region
+  type: string
+  default: 'Central India'
+- name: workload
+  type: string
+  default: 'sentiment-analysis'
+- name: modelId
+  type: string
+  default: 'sentiment-v1'
+- name: modelName
+  type: string
+  default: 'Sentiment Analysis'
+- name: vmSize
+  displayName: 'AI Compute Size'
+  type: string
+  default: 'Standard_NC4as_T4_v3'
+- name: hubAddressSpace
+  type: string
+  default: '10.0.0.0/16'
+- name: generalSpokeAddressSpace
+  type: string
+  default: '10.1.0.0/16'
+- name: aiSpokeAddressSpace
+  type: string
+  default: '10.2.0.0/16'
+- name: enableMonitoring
+  type: boolean
+  default: true
+- name: enablePrivateEndpoint
+  type: boolean
+  default: true
+
+stages:
+
+# ============================================================
+# STAGE 1 - CI VALIDATION
+# ============================================================
+
+- stage: CI_Validation
+  displayName: 'CI Validation'
+
+  jobs:
+  - job: CI_Checks
+    displayName: 'Terraform CI Checks'
+
+    steps:
+
+    - checkout: self
+      displayName: 'Checkout repository'
+
+    - script: |
+        set -e
+
+        echo "======================================"
+        echo "Terraform version"
+        echo "======================================"
+
+        terraform version
+
+      displayName: 'Check Terraform installation'
+
+
+    - script: |
+        set -e
+
+        echo "======================================"
+        echo "Terraform format check"
+        echo "======================================"
+
+        terraform fmt -check -recursive backend/terraform
+
+        echo "======================================"
+        echo "Terraform format check completed"
+        echo "======================================"
+
+      displayName: 'Terraform format check'
+
+
+# ============================================================
+# STAGE 2 - AWS VALIDATION
+# ============================================================
+
+# STAGE 2 - AZURE VALIDATION
+# ============================================================
+
+- stage: Azure_Validation
+  displayName: 'Azure Terraform Validation'
+
+  dependsOn: CI_Validation
+  condition: succeeded()
+
+  jobs:
+  - job: Validate_Azure
+    displayName: 'Validate Azure Terraform'
+
+    steps:
+
+    - checkout: self
+      displayName: 'Checkout repository'
+
+    - script: |
+        set -e
+
+        echo "======================================"
+        echo "Validating Azure Terraform configuration"
+        echo "======================================"
+
+        terraform -chdir=backend/terraform/azure init \
+          -backend=false \
+          -input=false
+
+        terraform -chdir=backend/terraform/azure validate
+
+        echo "======================================"
+        echo "Azure Terraform validation completed"
+        echo "======================================"
+
+      displayName: 'Validate Azure Terraform'
+
+
+# ============================================================
+# STAGE 4 - TERRAFORM STATE BOOTSTRAP
+# ============================================================
+
+- stage: Terraform_State_Bootstrap
+  displayName: 'Terraform State Bootstrap'
+
+  dependsOn: Azure_Validation
+  condition: succeeded()
+
+  jobs:
+  - job: Bootstrap_State
+    displayName: 'Create Terraform Remote State'
+
+    steps:
+
+    - checkout: self
+      displayName: 'Checkout repository'
+
+    - task: AzureCLI@2
+      displayName: 'Create Terraform State Storage'
+
+      inputs:
+        azureSubscription: 'Azure-Terraform-Free-Connection'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+
+        inlineScript: |
+
+          set -e
+
+          echo "======================================"
+          echo "Terraform State Bootstrap"
+          echo "======================================"
+
+          RESOURCE_GROUP="rg-terraform-state"
+          CONTAINER_NAME="tfstate"
+          LOCATION="centralindia"
+
+          SUBSCRIPTION_ID=$(az account show \
+            --query id \
+            --output tsv)
+
+          SUBSCRIPTION_NAME=$(az account show \
+            --query name \
+            --output tsv)
+
+          echo "Subscription:"
+          echo "$SUBSCRIPTION_NAME"
+
+          echo "Subscription ID:"
+          echo "$SUBSCRIPTION_ID"
+
+          SUBSCRIPTION_SUFFIX=$(echo "$SUBSCRIPTION_ID" \
+            | tr -d '-' \
+            | cut -c1-8)
+
+          STORAGE_ACCOUNT="tfstateai${SUBSCRIPTION_SUFFIX}"
+
+          echo "Terraform state storage account:"
+          echo "$STORAGE_ACCOUNT"
+
+
+          echo "======================================"
+          echo "Checking Resource Group"
+          echo "======================================"
+
+          if az group show \
+            --name "$RESOURCE_GROUP" \
+            --output none 2>/dev/null
+          then
+            echo "Resource group already exists."
+          else
+            echo "Creating resource group..."
+
+            az group create \
+              --name "$RESOURCE_GROUP" \
+              --location "$LOCATION"
+
+            echo "Resource group created."
+          fi
+
+
+          echo "======================================"
+          echo "Checking Storage Account"
+          echo "======================================"
+
+          if az storage account show \
+            --name "$STORAGE_ACCOUNT" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output none 2>/dev/null
+          then
+            echo "Storage account already exists."
+          else
+            echo "Creating storage account..."
+
+            az storage account create \
+              --name "$STORAGE_ACCOUNT" \
+              --resource-group "$RESOURCE_GROUP" \
+              --location "$LOCATION" \
+              --sku Standard_LRS \
+              --min-tls-version TLS1_2 \
+              --allow-blob-public-access false
+
+            echo "Storage account created."
+          fi
+
+
+          echo "======================================"
+          echo "Checking Terraform State Container"
+          echo "======================================"
+
+          if az storage container show \
+            --name "$CONTAINER_NAME" \
+            --account-name "$STORAGE_ACCOUNT" \
+            --auth-mode login \
+            --output none 2>/dev/null
+          then
+            echo "Terraform state container already exists."
+          else
+            echo "Creating Terraform state container..."
+
+            az storage container create \
+              --name "$CONTAINER_NAME" \
+              --account-name "$STORAGE_ACCOUNT" \
+              --auth-mode login \
+              --public-access off
+
+            echo "Terraform state container created."
+          fi
+
+
+          echo "======================================"
+          echo "Terraform State Bootstrap Complete"
+          echo "======================================"
+
+
+# ============================================================
+# STAGE 5 - AZURE TERRAFORM PLAN
+# ============================================================
+
+- stage: Azure_Terraform_Plan
+  displayName: 'Azure Terraform Plan - Free Subscription'
+
+  dependsOn: Terraform_State_Bootstrap
+  condition: succeeded()
+
+  jobs:
+  - job: Terraform_Plan
+    displayName: 'Terraform Plan - Free Azure Subscription'
+
+    steps:
+
+    - checkout: self
+      displayName: 'Checkout repository'
+
+    - task: AzureCLI@2
+      displayName: 'Terraform Plan - Free Azure Subscription'
+
+      inputs:
+        azureSubscription: 'Azure-Terraform-Free-Connection'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+
+        inlineScript: |
+
+          set -e
+
+          echo "======================================"
+          echo "Azure account information"
+          echo "======================================"
+
+          az account show \
+            --query "{SubscriptionId:id, SubscriptionName:name, TenantId:tenantId}" \
+            --output table
+
+
+          echo "======================================"
+          echo "Terraform backend configuration"
+          echo "======================================"
+
+          export ARM_USE_AZUREAD=true
+          export ARM_USE_CLI=true
+
+          RESOURCE_GROUP="rg-terraform-state"
+          CONTAINER_NAME="tfstate"
+          STATE_KEY="azure-${{ lower(parameters.deploymentName) }}-${{ lower(parameters.environment) }}.tfstate"
+
+          SUBSCRIPTION_ID=$(az account show \
+            --query id \
+            --output tsv)
+
+          SUBSCRIPTION_SUFFIX=$(echo "$SUBSCRIPTION_ID" \
+            | tr -d '-' \
+            | cut -c1-8)
+
+          STORAGE_ACCOUNT="tfstateai${SUBSCRIPTION_SUFFIX}"
+
+          echo "Resource Group:"
+          echo "$RESOURCE_GROUP"
+
+          echo "Storage Account:"
+          echo "$STORAGE_ACCOUNT"
+
+          echo "Container:"
+          echo "$CONTAINER_NAME"
+
+          echo "State Key:"
+          echo "$STATE_KEY"
+
+
+          echo "======================================"
+          echo "Terraform initialization"
+          echo "======================================"
+
+          terraform -chdir=backend/terraform/azure init \
+            -reconfigure \
+            -input=false \
+            -backend-config="resource_group_name=${RESOURCE_GROUP}" \
+            -backend-config="storage_account_name=${STORAGE_ACCOUNT}" \
+            -backend-config="container_name=${CONTAINER_NAME}" \
+            -backend-config="key=${STATE_KEY}"
+
+
+          echo "======================================"
+          echo "Terraform Plan"
+          echo "======================================"
+
+          terraform -chdir=backend/terraform/azure plan \
+            -input=false \
+            -var='deployment_name=${{ parameters.deploymentName }}' \
+            -var='environment=${{ parameters.environment }}' \
+            -var='region=${{ parameters.region }}' \
+            -var='workload=${{ parameters.workload }}' \
+            -var='model_id=${{ parameters.modelId }}' \
+            -var='model_name=${{ parameters.modelName }}' \
+            -var='vmSize=${{ parameters.vmSize }}' \
+            -var='hub_address_space=${{ parameters.hubAddressSpace }}' \
+            -var='general_spoke_address_space=${{ parameters.generalSpokeAddressSpace }}' \
+            -var='ai_spoke_address_space=${{ parameters.aiSpokeAddressSpace }}' \
+            -var='enableMonitoring=${{ parameters.enableMonitoring }}' \
+            -var='enablePrivateEndpoint=${{ parameters.enablePrivateEndpoint }}' \
+            -out=tfplan
+
+
+          echo "======================================"
+          echo "Terraform plan generated"
+          echo "======================================"
+
+          ls -lh backend/terraform/azure/tfplan
+
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Terraform Plan'
+
+      inputs:
+        targetPath: 'backend/terraform/azure/tfplan'
+        artifact: 'azure-terraform-plan'
+        publishLocation: 'pipeline'
+
+
+# ============================================================
+# STAGE 6 - AZURE TERRAFORM APPLY
+# ============================================================
+
+- stage: Azure_Terraform_Apply
+  displayName: 'Azure Terraform Apply - Free Subscription'
+
+  dependsOn: Azure_Terraform_Plan
+  condition: and(succeeded(), eq('${{ parameters.action }}', 'apply'))
+
+  jobs:
+  - job: Terraform_Apply
+    displayName: 'Apply Terraform Plan'
+
+    steps:
+
+    - checkout: self
+      displayName: 'Checkout repository'
+
+
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download Terraform Plan'
+
+      inputs:
+        buildType: 'current'
+        artifactName: 'azure-terraform-plan'
+        targetPath: '$(Pipeline.Workspace)/azure-terraform-plan'
+
+
+    - task: AzureCLI@2
+      displayName: 'Terraform Apply - Free Azure Subscription'
+
+      inputs:
+        azureSubscription: 'Azure-Terraform-Free-Connection'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+
+        inlineScript: |
+
+          set -e
+
+          echo "======================================"
+          echo "Azure account information"
+          echo "======================================"
+
+          az account show \
+            --query "{SubscriptionId:id, SubscriptionName:name, TenantId:tenantId}" \
+            --output table
+
+
+          echo "======================================"
+          echo "Terraform backend configuration"
+          echo "======================================"
+
+          export ARM_USE_AZUREAD=true
+          export ARM_USE_CLI=true
+
+          RESOURCE_GROUP="rg-terraform-state"
+          CONTAINER_NAME="tfstate"
+          STATE_KEY="azure-${{ lower(parameters.deploymentName) }}-${{ lower(parameters.environment) }}.tfstate"
+
+          SUBSCRIPTION_ID=$(az account show \
+            --query id \
+            --output tsv)
+
+          SUBSCRIPTION_SUFFIX=$(echo "$SUBSCRIPTION_ID" \
+            | tr -d '-' \
+            | cut -c1-8)
+
+          STORAGE_ACCOUNT="tfstateai${SUBSCRIPTION_SUFFIX}"
+
+          echo "Resource Group:"
+          echo "$RESOURCE_GROUP"
+
+          echo "Storage Account:"
+          echo "$STORAGE_ACCOUNT"
+
+          echo "Container:"
+          echo "$CONTAINER_NAME"
+
+          echo "State Key:"
+          echo "$STATE_KEY"
+
+
+          echo "======================================"
+          echo "Terraform initialization"
+          echo "======================================"
+
+          terraform -chdir=backend/terraform/azure init \
+            -reconfigure \
+            -input=false \
+            -backend-config="resource_group_name=${RESOURCE_GROUP}" \
+            -backend-config="storage_account_name=${STORAGE_ACCOUNT}" \
+            -backend-config="container_name=${CONTAINER_NAME}" \
+            -backend-config="key=${STATE_KEY}"
+
+
+          echo "======================================"
+          echo "Checking Terraform plan artifact"
+          echo "======================================"
+
+          PLAN_SOURCE="$(Pipeline.Workspace)/azure-terraform-plan/tfplan"
+
+          if [ ! -f "$PLAN_SOURCE" ]; then
+            echo "ERROR: Terraform plan artifact not found."
+            exit 1
+          fi
+
+          echo "Terraform plan found:"
+          ls -lh "$PLAN_SOURCE"
+
+
+          echo "======================================"
+          echo "Copying Terraform plan"
+          echo "======================================"
+
+          cp "$PLAN_SOURCE" \
+            backend/terraform/azure/tfplan
+
+
+          echo "======================================"
+          echo "APPLYING TERRAFORM PLAN"
+          echo "======================================"
+
+          terraform -chdir=backend/terraform/azure apply \
+            -input=false \
+            tfplan
+
+
+          echo "======================================"
+          echo "Terraform Apply completed successfully"
+          echo "======================================"
+
+# ============================================================
+# STAGE 7 - AZURE AI MODEL DEPLOYMENT
+# ============================================================
+
+- stage: Azure_AI_Model_Deployment
+  displayName: 'Azure AI Model Deployment'
+
+  dependsOn: Azure_Terraform_Apply
+  condition: and(succeeded(), eq('${{ parameters.action }}', 'apply'))
+
+  jobs:
+  - job: Deploy_Sentiment_Model
+    displayName: 'Deploy Sentiment Analysis Model'
+
+    steps:
+
+    - checkout: self
+      displayName: 'Checkout repository'
+
+    - task: AzureCLI@2
+      displayName: 'Deploy Sentiment Model to Azure ML'
+
+      inputs:
+        azureSubscription: 'Azure-Terraform-Free-Connection'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+
+        inlineScript: |
+
+          set -e
+
+          ENVIRONMENT="${{ lower(parameters.environment) }}"
+          LANDING_ZONE="${{ lower(parameters.deploymentName) }}"
+          SUBSCRIPTION_ID=$(az account show --query id --output tsv)
+          SUBSCRIPTION_SUFFIX=$(echo "$SUBSCRIPTION_ID" | tr -d '-' | cut -c1-8)
+          STORAGE_ACCOUNT="aigov${ENVIRONMENT}${SUBSCRIPTION_SUFFIX}"
+          RESOURCE_GROUP="rg-${LANDING_ZONE}-ai-${ENVIRONMENT}"
+
+          cleanup() {
+            echo "======================================"
+            echo "Restoring Storage private access"
+            echo "======================================"
+
+            az storage account update \
+              --name "$STORAGE_ACCOUNT" \
+              --resource-group "$RESOURCE_GROUP" \
+              --public-network-access Disabled
+
+            echo "Storage public access disabled."
+          }
+
+          trap cleanup EXIT
+
+
+          echo "======================================"
+          echo "Azure AI Model Deployment"
+          echo "======================================"
+
+          az account show \
+            --query "{SubscriptionId:id,SubscriptionName:name,TenantId:tenantId}" \
+            --output table
+
+
+          echo "======================================"
+          echo "Temporarily enabling Storage access"
+          echo "======================================"
+
+          az storage account update \
+            --name "$STORAGE_ACCOUNT" \
+            --resource-group "$RESOURCE_GROUP" \
+            --public-network-access Enabled
+
+          echo "Storage public access enabled."
+
+
+          echo "======================================"
+          echo "Waiting for Storage configuration"
+          echo "======================================"
+
+          sleep 15
+
+
+          echo "======================================"
+          echo "Preparing Python environment"
+          echo "======================================"
+
+          python3 --version
+
+          python3 -m venv .ai-ml-venv
+
+          source .ai-ml-venv/bin/activate
+
+          python -m pip install --upgrade pip
+
+          python -m pip install \
+            azure-ai-ml \
+            azure-identity
+
+
+          echo "======================================"
+          echo "Azure ML configuration"
+          echo "======================================"
+
+          export AZURE_SUBSCRIPTION_ID=$(az account show \
+            --query id \
+            --output tsv)
+
+          export AZURE_RESOURCE_GROUP="$RESOURCE_GROUP"
+
+          export AZURE_ML_WORKSPACE="aml-${ENVIRONMENT}"
+
+          echo "Subscription:"
+          echo "$AZURE_SUBSCRIPTION_ID"
+
+          echo "Resource Group:"
+          echo "$AZURE_RESOURCE_GROUP"
+
+          echo "Workspace:"
+          echo "$AZURE_ML_WORKSPACE"
+
+
+          echo "======================================"
+          echo "Deploying Sentiment Analysis Model"
+          echo "======================================"
+
+          if [ '${{ parameters.workload }}' != 'sentiment-analysis' ]; then
+            echo "ERROR: This capstone currently implements model deployment only for sentiment-analysis."
+            echo "Add a deployment script for ${{ parameters.workload }} before enabling that catalogue item."
+            exit 1
+          fi
+
+          python backend/ml/deploy_sentiment.py
+
+
+          echo "======================================"
+          echo "Sentiment model deployment completed"
+          echo "======================================"
+
+          echo "Storage will now be restored to private access."
+# ============================================================
+# STAGE 8 - TEMPORARY AZURE TERRAFORM DESTROY
+# ============================================================
+
+- stage: Azure_Terraform_Destroy
+  displayName: 'Azure Terraform Destroy'
+
+  dependsOn: Azure_Terraform_Plan
+  condition: and(succeeded(), eq('${{ parameters.action }}', 'destroy'))
+
+  jobs:
+  - job: Terraform_Destroy
+    displayName: 'Destroy Azure Landing Zone'
+
+    steps:
+
+    - checkout: self
+      displayName: 'Checkout repository'
+
+    - task: AzureCLI@2
+      displayName: 'Terraform Destroy - Azure Landing Zone'
+
+      inputs:
+        azureSubscription: 'Azure-Terraform-Free-Connection'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+
+        inlineScript: |
+
+          set -e
+
+          echo "======================================"
+          echo "Azure account information"
+          echo "======================================"
+
+          az account show \
+            --query "{SubscriptionId:id, SubscriptionName:name, TenantId:tenantId}" \
+            --output table
+
+
+          echo "======================================"
+          echo "Terraform backend configuration"
+          echo "======================================"
+
+          export ARM_USE_AZUREAD=true
+          export ARM_USE_CLI=true
+
+          RESOURCE_GROUP="rg-terraform-state"
+          CONTAINER_NAME="tfstate"
+          STATE_KEY="azure-${{ lower(parameters.deploymentName) }}-${{ lower(parameters.environment) }}.tfstate"
+
+          SUBSCRIPTION_ID=$(az account show \
+            --query id \
+            --output tsv)
+
+          SUBSCRIPTION_SUFFIX=$(echo "$SUBSCRIPTION_ID" \
+            | tr -d '-' \
+            | cut -c1-8)
+
+          STORAGE_ACCOUNT="tfstateai${SUBSCRIPTION_SUFFIX}"
+
+          echo "Resource Group: $RESOURCE_GROUP"
+          echo "Storage Account: $STORAGE_ACCOUNT"
+          echo "Container: $CONTAINER_NAME"
+          echo "State Key: $STATE_KEY"
+
+
+          echo "======================================"
+          echo "Terraform initialization"
+          echo "======================================"
+
+          terraform -chdir=backend/terraform/azure init \
+            -reconfigure \
+            -input=false \
+            -backend-config="resource_group_name=${RESOURCE_GROUP}" \
+            -backend-config="storage_account_name=${STORAGE_ACCOUNT}" \
+            -backend-config="container_name=${CONTAINER_NAME}" \
+            -backend-config="key=${STATE_KEY}"
+
+
+          echo "======================================"
+          echo "Terraform state"
+          echo "======================================"
+
+          terraform -chdir=backend/terraform/azure state list
+
+
+          echo "======================================"
+          echo "DESTROYING AZURE LANDING ZONE"
+          echo "======================================"
+
+          terraform -chdir=backend/terraform/azure destroy \
+            -input=false \
+            -auto-approve \
+            -var='deployment_name=${{ parameters.deploymentName }}' \
+            -var='environment=${{ parameters.environment }}' \
+            -var='region=${{ parameters.region }}' \
+            -var='workload=${{ parameters.workload }}' \
+            -var='model_id=${{ parameters.modelId }}' \
+            -var='model_name=${{ parameters.modelName }}' \
+            -var='vmSize=${{ parameters.vmSize }}' \
+            -var='hub_address_space=${{ parameters.hubAddressSpace }}' \
+            -var='general_spoke_address_space=${{ parameters.generalSpokeAddressSpace }}' \
+            -var='ai_spoke_address_space=${{ parameters.aiSpokeAddressSpace }}'
+
+
+          echo "======================================"
+          echo "Azure Terraform Destroy completed"
+          echo "======================================"
