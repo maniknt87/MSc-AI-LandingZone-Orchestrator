@@ -94,6 +94,8 @@ stages:
           test "$(awsTfStateBucket)" != 'REPLACE_WITH_TERRAFORM_STATE_BUCKET'
           test "$(awsTfLockTable)" != 'REPLACE_WITH_TERRAFORM_LOCK_TABLE'
           STATE_KEY="aws-${{ lower(parameters.deploymentName) }}-${{ lower(parameters.environment) }}.tfstate"
+          ENABLE_MONITORING=$(printf '%s' '${{ parameters.enableMonitoring }}' | tr '[:upper:]' '[:lower:]')
+          ENABLE_PRIVATE_ENDPOINT=$(printf '%s' '${{ parameters.enablePrivateEndpoint }}' | tr '[:upper:]' '[:lower:]')
           terraform -chdir="$(terraformDirectory)" init -reconfigure -input=false \
             -backend-config="bucket=$(awsTfStateBucket)" \
             -backend-config="key=$STATE_KEY" \
@@ -114,8 +116,8 @@ stages:
             -var='hub_address_space=${{ parameters.hubAddressSpace }}' \
             -var='general_spoke_address_space=${{ parameters.generalSpokeAddressSpace }}' \
             -var='ai_spoke_address_space=${{ parameters.aiSpokeAddressSpace }}' \
-            -var='enable_monitoring=${{ parameters.enableMonitoring }}' \
-            -var='enable_private_endpoint=${{ parameters.enablePrivateEndpoint }}'
+            -var="enable_monitoring=${ENABLE_MONITORING}" \
+            -var="enable_private_endpoint=${ENABLE_PRIVATE_ENDPOINT}"
     - task: PublishPipelineArtifact@1
       inputs:
         targetPath: '$(terraformDirectory)/tfplan'
