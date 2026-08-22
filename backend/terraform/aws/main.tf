@@ -2,6 +2,62 @@
 #
 # Resources will be added here through reusable modules.
 
+resource "aws_iam_role" "sagemaker_execution" {
+  name = "sm-${lower(var.deployment_name)}-${lower(var.environment)}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "sagemaker.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+
+  tags = {
+    Platform    = var.platform_name
+    Environment = var.environment
+    Workload    = var.workload
+    ManagedBy   = "Terraform"
+  }
+}
+
+resource "aws_iam_role_policy" "sagemaker_execution" {
+  name = "sagemaker-inference-runtime"
+  role = aws_iam_role.sagemaker_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "PullInferenceImage"
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "WriteInferenceLogsAndMetrics"
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:PutMetricData",
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:DescribeLogStreams",
+          "logs:PutLogEvents"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 module "transit_gateway" {
   source = "./modules/transit-gateway"
 
