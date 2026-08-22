@@ -819,10 +819,60 @@ stages:
 
           STORAGE_ACCOUNT="tfstateai${SUBSCRIPTION_SUFFIX}"
 
+          ENVIRONMENT="${{ lower(parameters.environment) }}"
+          LANDING_ZONE="${{ lower(parameters.deploymentName) }}"
+          ML_RESOURCE_GROUP="rg-${LANDING_ZONE}-ai-${ENVIRONMENT}"
+          ML_WORKSPACE="aml-${ENVIRONMENT}"
+          ML_ENDPOINT="sentiment-ai-${SUBSCRIPTION_SUFFIX}"
+
           echo "Resource Group: $RESOURCE_GROUP"
           echo "Storage Account: $STORAGE_ACCOUNT"
           echo "Container: $CONTAINER_NAME"
           echo "State Key: $STATE_KEY"
+
+
+          echo "======================================"
+          echo "Deleting Azure ML nested endpoints"
+          echo "======================================"
+
+          ENDPOINT_RESOURCE_TYPE="Microsoft.MachineLearningServices/workspaces/onlineEndpoints"
+          ENDPOINT_RESOURCE_NAME="${ML_WORKSPACE}/${ML_ENDPOINT}"
+
+          if az resource show \
+            --resource-group "$ML_RESOURCE_GROUP" \
+            --resource-type "$ENDPOINT_RESOURCE_TYPE" \
+            --name "$ENDPOINT_RESOURCE_NAME" \
+            --api-version "2024-10-01" \
+            --output none 2>/dev/null
+          then
+            echo "Deleting managed endpoint $ML_ENDPOINT and its deployments..."
+            az resource delete \
+              --resource-group "$ML_RESOURCE_GROUP" \
+              --resource-type "$ENDPOINT_RESOURCE_TYPE" \
+              --name "$ENDPOINT_RESOURCE_NAME" \
+              --api-version "2024-10-01"
+
+            for attempt in $(seq 1 60); do
+              if ! az resource show \
+                --resource-group "$ML_RESOURCE_GROUP" \
+                --resource-type "$ENDPOINT_RESOURCE_TYPE" \
+                --name "$ENDPOINT_RESOURCE_NAME" \
+                --api-version "2024-10-01" \
+                --output none 2>/dev/null
+              then
+                echo "Azure ML endpoint deleted."
+                break
+              fi
+              if [ "$attempt" -eq 60 ]; then
+                echo "ERROR: Azure ML endpoint deletion did not finish within 10 minutes."
+                exit 1
+              fi
+              echo "Waiting for Azure ML endpoint deletion ($attempt/60)..."
+              sleep 10
+            done
+          else
+            echo "Azure ML endpoint is already absent."
+          fi
 
 
           echo "======================================"
