@@ -52,10 +52,9 @@ parameters:
 variables:
   terraformDirectory: 'backend/terraform/aws'
   awsServiceConnection: 'AWS-Terraform-Connection'
-  # Define these as secured pipeline variables or in a variable group.
-  # awsTfStateBucket must already exist and have versioning/encryption enabled.
-  awsTfStateBucket: 'mani-terraform-state-699754982224'
-  awsTfLockTable: 'mani-terraform-lock'
+  # The state bucket is in Mumbai. Define awsTfStateBucket and awsTfLockTable
+  # in the Azure DevOps pipeline UI or an authorized variable group.
+  awsTfStateRegion: 'ap-south-1'
 
 stages:
 - stage: Validate
@@ -91,16 +90,20 @@ stages:
             'Europe (Ireland)') AWS_REGION='eu-west-1' ;;
             *) echo 'Region is not approved by this pipeline.'; exit 1 ;;
           esac
-          test "$(awsTfStateBucket)" != 'REPLACE_WITH_TERRAFORM_STATE_BUCKET'
-          test "$(awsTfLockTable)" != 'REPLACE_WITH_TERRAFORM_LOCK_TABLE'
+          STATE_BUCKET="$(awsTfStateBucket)"
+          LOCK_TABLE="$(awsTfLockTable)"
+          test -n "$STATE_BUCKET"
+          test -n "$LOCK_TABLE"
+          case "$STATE_BUCKET" in '$('*')') echo 'awsTfStateBucket is not configured.'; exit 1 ;; esac
+          case "$LOCK_TABLE" in '$('*')') echo 'awsTfLockTable is not configured.'; exit 1 ;; esac
           STATE_KEY="aws-${{ lower(parameters.deploymentName) }}-${{ lower(parameters.environment) }}.tfstate"
           ENABLE_MONITORING=$(printf '%s' '${{ parameters.enableMonitoring }}' | tr '[:upper:]' '[:lower:]')
           ENABLE_PRIVATE_ENDPOINT=$(printf '%s' '${{ parameters.enablePrivateEndpoint }}' | tr '[:upper:]' '[:lower:]')
           terraform -chdir="$(terraformDirectory)" init -reconfigure -input=false \
-            -backend-config="bucket=$(awsTfStateBucket)" \
+            -backend-config="bucket=$STATE_BUCKET" \
             -backend-config="key=$STATE_KEY" \
-            -backend-config="region=$AWS_REGION" \
-            -backend-config="dynamodb_table=$(awsTfLockTable)" \
+            -backend-config="region=$(awsTfStateRegion)" \
+            -backend-config="dynamodb_table=$LOCK_TABLE" \
             -backend-config="encrypt=true"
           PLAN_MODE=''
           if [ '${{ parameters.action }}' = 'destroy' ]; then PLAN_MODE='-destroy'; fi
@@ -154,7 +157,7 @@ stages:
                 terraform -chdir="$(terraformDirectory)" init -reconfigure -input=false \
                   -backend-config="bucket=$(awsTfStateBucket)" \
                   -backend-config="key=$STATE_KEY" \
-                  -backend-config="region=$AWS_REGION" \
+                  -backend-config="region=$(awsTfStateRegion)" \
                   -backend-config="dynamodb_table=$(awsTfLockTable)" \
                   -backend-config="encrypt=true"
                 cp "$(Pipeline.Workspace)/aws-terraform-plan/tfplan" "$(terraformDirectory)/tfplan"

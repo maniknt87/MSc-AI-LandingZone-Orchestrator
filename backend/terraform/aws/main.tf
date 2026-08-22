@@ -25,32 +25,32 @@ module "general_vpc" {
 
   subnets = {
     AppSubnet = {
-      cidr_block        = "10.11.0.0/24"
-      availability_zone = "ap-south-1a"
+      cidr_block        = cidrsubnet(var.general_spoke_address_space, 8, 0)
+      availability_zone = "${var.aws_region}a"
       type              = "Application"
     }
 
     DataSubnet = {
-      cidr_block        = "10.11.1.0/24"
-      availability_zone = "ap-south-1b"
+      cidr_block        = cidrsubnet(var.general_spoke_address_space, 8, 1)
+      availability_zone = "${var.aws_region}b"
       type              = "Data"
     }
 
     ManagementSubnet = {
-      cidr_block        = "10.11.2.0/24"
-      availability_zone = "ap-south-1a"
+      cidr_block        = cidrsubnet(var.general_spoke_address_space, 8, 2)
+      availability_zone = "${var.aws_region}a"
       type              = "Management"
     }
 
     TGWSubnetA = {
-      cidr_block        = "10.11.10.0/28"
-      availability_zone = "ap-south-1a"
+      cidr_block        = cidrsubnet(var.general_spoke_address_space, 12, 160)
+      availability_zone = "${var.aws_region}a"
       type              = "TransitGateway"
     }
 
     TGWSubnetB = {
-      cidr_block        = "10.11.11.0/28"
-      availability_zone = "ap-south-1b"
+      cidr_block        = cidrsubnet(var.general_spoke_address_space, 12, 161)
+      availability_zone = "${var.aws_region}b"
       type              = "TransitGateway"
     }
   }
@@ -95,32 +95,32 @@ module "ai_vpc" {
 
   subnets = {
     AISubnet = {
-      cidr_block        = "10.12.0.0/24"
-      availability_zone = "ap-south-1a"
+      cidr_block        = cidrsubnet(var.ai_spoke_address_space, 8, 0)
+      availability_zone = "${var.aws_region}a"
       type              = "AI"
     }
 
     PrivateEndpointSubnet = {
-      cidr_block        = "10.12.1.0/24"
-      availability_zone = "ap-south-1b"
+      cidr_block        = cidrsubnet(var.ai_spoke_address_space, 8, 1)
+      availability_zone = "${var.aws_region}b"
       type              = "PrivateEndpoint"
     }
 
     ManagementSubnet = {
-      cidr_block        = "10.12.2.0/24"
-      availability_zone = "ap-south-1a"
+      cidr_block        = cidrsubnet(var.ai_spoke_address_space, 8, 2)
+      availability_zone = "${var.aws_region}a"
       type              = "Management"
     }
 
     TGWSubnetA = {
-      cidr_block        = "10.12.10.0/28"
-      availability_zone = "ap-south-1a"
+      cidr_block        = cidrsubnet(var.ai_spoke_address_space, 12, 160)
+      availability_zone = "${var.aws_region}a"
       type              = "TransitGateway"
     }
 
     TGWSubnetB = {
-      cidr_block        = "10.12.11.0/28"
-      availability_zone = "ap-south-1b"
+      cidr_block        = cidrsubnet(var.ai_spoke_address_space, 12, 161)
+      availability_zone = "${var.aws_region}b"
       type              = "TransitGateway"
     }
   }
@@ -166,7 +166,7 @@ module "general_route_table" {
 
   transit_gateway_id = module.transit_gateway.transit_gateway_id
 
-  destination_cidr = "10.12.0.0/16"
+  destination_cidr = var.ai_spoke_address_space
 
   tags = {
     Platform     = var.platform_name
@@ -186,7 +186,7 @@ module "ai_route_table" {
 
   transit_gateway_id = module.transit_gateway.transit_gateway_id
 
-  destination_cidr = "10.11.0.0/16"
+  destination_cidr = var.general_spoke_address_space
 
   tags = {
     Platform     = var.platform_name
@@ -210,7 +210,7 @@ module "general_app_sg" {
       protocol    = "tcp"
       from_port   = 443
       to_port     = 443
-      cidr_blocks = ["10.11.0.0/16"]
+      cidr_blocks = [var.general_spoke_address_space]
     }
   ]
 
@@ -247,7 +247,7 @@ module "general_data_sg" {
       protocol    = "tcp"
       from_port   = 443
       to_port     = 443
-      cidr_blocks = ["10.11.0.0/24"]
+      cidr_blocks = [cidrsubnet(var.general_spoke_address_space, 8, 0)]
     }
   ]
 
@@ -284,7 +284,7 @@ module "ai_workload_sg" {
       protocol    = "tcp"
       from_port   = 443
       to_port     = 443
-      cidr_blocks = ["10.12.0.0/16"]
+      cidr_blocks = [var.ai_spoke_address_space]
     }
   ]
 
@@ -321,7 +321,7 @@ module "management_sg" {
       protocol    = "tcp"
       from_port   = 443
       to_port     = 443
-      cidr_blocks = ["10.11.0.0/16"]
+      cidr_blocks = [var.general_spoke_address_space]
     }
   ]
 
@@ -353,25 +353,25 @@ module "inspection_vpc" {
   subnets = {
     FirewallSubnetA = {
       cidr_block        = "10.10.0.0/24"
-      availability_zone = "ap-south-1a"
+      availability_zone = "${var.aws_region}a"
       type              = "Firewall"
     }
 
     FirewallSubnetB = {
       cidr_block        = "10.10.1.0/24"
-      availability_zone = "ap-south-1b"
+      availability_zone = "${var.aws_region}b"
       type              = "Firewall"
     }
 
     TGWSubnetA = {
       cidr_block        = "10.10.10.0/28"
-      availability_zone = "ap-south-1a"
+      availability_zone = "${var.aws_region}a"
       type              = "TransitGateway"
     }
 
     TGWSubnetB = {
       cidr_block        = "10.10.11.0/28"
-      availability_zone = "ap-south-1b"
+      availability_zone = "${var.aws_region}b"
       type              = "TransitGateway"
     }
   }
@@ -455,13 +455,13 @@ resource "aws_route_table_association" "ai_management" {
 }
 
 resource "aws_ec2_transit_gateway_route" "general_to_ai" {
-  destination_cidr_block         = "10.12.0.0/16"
+  destination_cidr_block         = var.ai_spoke_address_space
   transit_gateway_route_table_id = module.transit_gateway.route_table_id
   transit_gateway_attachment_id  = module.ai_tgw_attachment.attachment_id
 }
 
 resource "aws_ec2_transit_gateway_route" "ai_to_general" {
-  destination_cidr_block         = "10.11.0.0/16"
+  destination_cidr_block         = var.general_spoke_address_space
   transit_gateway_route_table_id = module.transit_gateway.route_table_id
   transit_gateway_attachment_id  = module.general_tgw_attachment.attachment_id
 }
