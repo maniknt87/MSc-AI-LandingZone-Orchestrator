@@ -118,6 +118,33 @@ def initialize_database():
         "CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status)"
     )
 
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS inference_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_id TEXT UNIQUE NOT NULL,
+            username TEXT NOT NULL,
+            cloud TEXT NOT NULL DEFAULT 'Azure',
+            endpoint_name TEXT NOT NULL,
+            deployment_name TEXT NOT NULL,
+            workload TEXT NOT NULL,
+            input_preview TEXT NOT NULL,
+            prediction TEXT,
+            confidence REAL,
+            latency_ms INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            error_message TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    cursor.execute("PRAGMA table_info(inference_runs)")
+    inference_columns = {column["name"] for column in cursor.fetchall()}
+    if "cloud" not in inference_columns:
+        cursor.execute(
+            "ALTER TABLE inference_runs ADD COLUMN cloud TEXT NOT NULL DEFAULT 'Azure'"
+        )
+
         # --------------------------------------
     # Add Allowed Region to Existing Users
     # --------------------------------------

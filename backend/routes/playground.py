@@ -15,13 +15,11 @@ security = HTTPBearer(auto_error=False)
 
 
 class InferenceRequest(BaseModel):
-    deployment_id: str = Field(min_length=1, max_length=64)
+    deployment_id: str = Field(min_length=1, max_length=160)
     text: str = Field(min_length=1, max_length=5000)
 
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(security),
-):
+def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(security)):
     if not credentials:
         raise HTTPException(status_code=401, detail="Authentication required.")
     user = verify_access_token(credentials.credentials)
@@ -36,31 +34,21 @@ def get_playground_deployments(current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/history")
-def get_playground_history(
-    limit: int = 20,
-    current_user: dict = Depends(get_current_user),
-):
+def get_playground_history(limit: int = 20, current_user: dict = Depends(get_current_user)):
     return {"runs": get_recent_inference_runs(max(1, min(limit, 100)))}
 
 
 @router.post("/invoke")
-def invoke_model(
-    request: InferenceRequest,
-    current_user: dict = Depends(get_current_user),
-):
+def invoke_model(request: InferenceRequest, current_user: dict = Depends(get_current_user)):
     deployment = next(
-        (
-            item
-            for item in list_playground_deployments()
-            if item["id"] == request.deployment_id
-        ),
+        (item for item in list_playground_deployments() if item["id"] == request.deployment_id),
         None,
     )
     if not deployment:
         raise HTTPException(status_code=404, detail="Deployment not found.")
-    if deployment["workload"] != "sentiment-analysis":
-        raise HTTPException(status_code=400, detail="This workload is not implemented yet.")
+    if not deployment["configured"]:
+        raise HTTPException(status_code=503, detail=f"{deployment['cloud']} inference is not configured.")
     try:
-        return invoke_sentiment_endpoint(request.text.strip(), current_user["username"])
+        return invoke_sentiment_endpoint(deployment, request.text.strip(), current_user["username"])
     except RuntimeError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
