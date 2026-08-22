@@ -2,6 +2,8 @@
 #
 # Resources will be added here through reusable modules.
 
+data "aws_caller_identity" "current" {}
+
 resource "aws_iam_role" "sagemaker_execution" {
   name = "sm-${lower(var.deployment_name)}-${lower(var.environment)}"
 
@@ -53,6 +55,15 @@ resource "aws_iam_role_policy" "sagemaker_execution" {
           "logs:PutLogEvents"
         ]
         Resource = "*"
+      },
+      {
+        Sid    = "ReadApprovedModelArtifacts"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:GetObjectVersion"
+        ]
+        Resource = "arn:aws:s3:::ai-model-artifacts-${data.aws_caller_identity.current.account_id}-${var.aws_region}/models/*"
       }
     ]
   })

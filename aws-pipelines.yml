@@ -55,8 +55,6 @@ variables:
   # The state bucket is in Mumbai. Define awsTfStateBucket and awsTfLockTable
   # in the Azure DevOps pipeline UI or an authorized variable group.
   awsTfStateRegion: 'ap-south-1'
-  awsTfStateBucket: 'mani-terraform-state-699754982224'
-  awsTfLockTable: 'mani-terraform-lock'
 
 stages:
 - stage: Validate
@@ -214,13 +212,22 @@ stages:
           esac
           ROLE_NAME=$(printf 'sm-%s-%s' '${{ parameters.deploymentName }}' '${{ parameters.environment }}' | tr '[:upper:]_' '[:lower:]-' | tr -cd 'a-z0-9-')
           EXECUTION_ROLE_ARN=$(aws iam get-role --role-name "$ROLE_NAME" --query 'Role.Arn' --output text)
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          MODEL_BUCKET="ai-model-artifacts-${AWS_ACCOUNT_ID}-${AWS_REGION}"
+          MODEL_KEY="models/sentiment/v1/model.tar.gz"
+          MODEL_DATA_URL="s3://${MODEL_BUCKET}/${MODEL_KEY}"
           python3 -m venv .aws-ml-venv
           . .aws-ml-venv/bin/activate
           python -m pip install --upgrade pip
-          python -m pip install 'boto3>=1.34,<2' 'sagemaker>=2.231,<3'
+          python -m pip install 'boto3>=1.34,<2' 'sagemaker>=2.231,<3' 'huggingface_hub>=0.24,<2'
+          python backend/ml/package_aws_model.py \
+            --region "$AWS_REGION" \
+            --bucket "$MODEL_BUCKET" \
+            --key "$MODEL_KEY"
           python backend/ml/deploy_aws_sentiment.py \
             --region "$AWS_REGION" \
             --deployment-name '${{ parameters.deploymentName }}' \
             --environment '${{ parameters.environment }}' \
             --instance-type '${{ parameters.vmSize }}' \
-            --execution-role-arn "$EXECUTION_ROLE_ARN"
+            --execution-role-arn "$EXECUTION_ROLE_ARN" \
+            --model-data-url "$MODEL_DATA_URL"

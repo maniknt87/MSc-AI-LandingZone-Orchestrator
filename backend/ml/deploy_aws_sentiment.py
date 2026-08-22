@@ -68,8 +68,9 @@ def deploy(args):
         ExecutionRoleArn=args.execution_role_arn,
         PrimaryContainer={
             "Image": image_uri,
+            "ModelDataUrl": args.model_data_url,
             "Environment": {
-                "HF_MODEL_ID": MODEL_HUB_ID,
+                "HF_MODEL_ID": "/opt/ml/model",
                 "HF_TASK": "text-classification",
             },
         },
@@ -103,6 +104,7 @@ def deploy(args):
         "endpoint_name": endpoint_name,
         "endpoint_status": description["EndpointStatus"],
         "model_id": MODEL_HUB_ID,
+        "model_data_url": args.model_data_url,
         "instance_type": args.instance_type,
         "region": args.region,
     }, indent=2))
@@ -115,6 +117,7 @@ def main():
     parser.add_argument("--environment", required=True)
     parser.add_argument("--instance-type", required=True)
     parser.add_argument("--execution-role-arn", required=True)
+    parser.add_argument("--model-data-url", required=True)
     deploy(parser.parse_args())
 
 
