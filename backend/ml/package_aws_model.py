@@ -21,6 +21,49 @@ MODEL_FILES = [
     "vocab.txt",
 ]
 
+INFERENCE_HANDLER = r'''import json
+
+import torch
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+
+def model_fn(model_dir):
+    tokenizer = AutoTokenizer.from_pretrained(model_dir, local_files_only=True)
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_dir,
+        local_files_only=True,
+    )
+    model.eval()
+    return {"model": model, "tokenizer": tokenizer}
+
+
+def input_fn(request_body, content_type="application/json"):
+    if content_type != "application/json":
+        raise ValueError(f"Unsupported content type: {content_type}")
+    payload = json.loads(request_body)
+    text = payload.get("inputs") or payload.get("text")
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("Request must contain a non-empty 'inputs' or 'text' field")
+    return text
+
+
+def predict_fn(text, model_bundle):
+    tokenizer = model_bundle["tokenizer"]
+    model = model_bundle["model"]
+    encoded = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+    with torch.no_grad():
+        probabilities = torch.softmax(model(**encoded).logits, dim=-1)[0]
+    index = int(torch.argmax(probabilities).item())
+    label = model.config.id2label[index]
+    return [{"label": label, "score": float(probabilities[index].item())}]
+
+
+def output_fn(prediction, accept="application/json"):
+    if accept != "application/json":
+        raise ValueError(f"Unsupported accept type: {accept}")
+    return json.dumps(prediction), accept
+'''
+
 
 def ensure_bucket(s3, bucket, region):
     try:
@@ -94,9 +137,12 @@ def build_archive(output_path):
             json.dumps({"model_id": MODEL_ID, "revision": revision}, indent=2),
             encoding="utf-8",
         )
+        code_directory = staging / "code"
+        code_directory.mkdir()
+        (code_directory / "inference.py").write_text(INFERENCE_HANDLER, encoding="utf-8")
         with tarfile.open(output_path, "w:gz") as archive:
             for source in sorted(staging.iterdir()):
-                archive.add(source, arcname=source.name, recursive=False)
+                archive.add(source, arcname=source.name)
     return revision
 
 

@@ -70,8 +70,8 @@ def deploy(args):
             "Image": image_uri,
             "ModelDataUrl": args.model_data_url,
             "Environment": {
-                "HF_MODEL_ID": "/opt/ml/model",
-                "HF_TASK": "text-classification",
+                "SAGEMAKER_PROGRAM": "inference.py",
+                "SAGEMAKER_SUBMIT_DIRECTORY": "/opt/ml/model/code",
             },
         },
     )
