@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 4.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 }
 
@@ -17,7 +21,7 @@ provider "azurerm" {
 
     key_vault {
       purge_soft_delete_on_destroy    = false
-      recover_soft_deleted_key_vaults = true
+      recover_soft_deleted_key_vaults = false
     }
 
     machine_learning {
@@ -27,6 +31,12 @@ provider "azurerm" {
 }
 
 data "azurerm_client_config" "current" {}
+resource "random_string" "key_vault_suffix" {
+  length  = 4
+  upper   = false
+  special = false
+}
+
 locals {
   name_prefix = lower(var.deployment_name)
   common_tags = {
@@ -391,7 +401,7 @@ module "ai_ml" {
 
   storage_account_id = module.ai_storage.storage_account_id
 
-  key_vault_name            = "kvai${lower(var.environment)}${substr(replace(data.azurerm_client_config.current.subscription_id, "-", ""), 0, 8)}a"
+  key_vault_name            = "kv${substr(replace(lower(var.deployment_name), "-", ""), 0, 8)}${substr(lower(var.environment), 0, 3)}${random_string.key_vault_suffix.result}"
   application_insights_name = "appi-ai-${lower(var.environment)}"
 
   private_endpoint_subnet_id = module.ai_spoke.subnet_ids["PrivateEndpointSubnet"]
