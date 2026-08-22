@@ -55,6 +55,25 @@ export const retryDeployment = async (deploymentId) => {
   return response.data;
 };
 
+// ------------------------------------
+// Model Playground
+// ------------------------------------
+
+export const getPlaygroundDeployments = async () => {
+  const response = await API.get("/playground/deployments");
+  return response.data;
+};
+
+export const getPlaygroundHistory = async () => {
+  const response = await API.get("/playground/history");
+  return response.data;
+};
+
+export const invokePlaygroundModel = async (request) => {
+  const response = await API.post("/playground/invoke", request);
+  return response.data;
+};
+
 export const getAzureDevOpsConnection = async () => {
   const response = await API.get("/onboarding/azure-devops");
   return response.data;
