@@ -48,11 +48,11 @@
         "s3:GetBucketLocation",
         "s3:GetBucketVersioning",
         "s3:GetEncryptionConfiguration",
-        "s3:GetPublicAccessBlock",
+        "s3:GetBucketPublicAccessBlock",
         "s3:ListBucket",
         "s3:PutBucketVersioning",
         "s3:PutEncryptionConfiguration",
-        "s3:PutPublicAccessBlock"
+        "s3:PutBucketPublicAccessBlock"
       ],
       "Resource": "arn:aws:s3:::ai-model-artifacts-699754982224-*"
     },
