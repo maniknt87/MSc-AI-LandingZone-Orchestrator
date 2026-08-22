@@ -16,6 +16,22 @@ _config_lock = RLock()
 _runtime_config = {}
 
 
+def normalize_run_status(state, result=None):
+    state_value = str(state or "").lower()
+    result_value = str(result or "").lower()
+    if state_value == "completed":
+        if result_value in {"succeeded", "partiallysucceeded"}:
+            return "Completed"
+        if result_value == "canceled":
+            return "Cancelled"
+        return "Failed"
+    if state_value in {"inprogress", "running"}:
+        return "Running"
+    if state_value == "canceling":
+        return "Cancelling"
+    return "Queued"
+
+
 def get_connection_config():
     with _config_lock:
         config = {
@@ -128,7 +144,37 @@ def queue_pipeline(deployment):
         "pipeline_name": run.get("pipeline", {}).get("name", str(pipeline_id)),
         "target_cloud": cloud,
         "pipeline_id": str(run["id"]),
+        "pipeline_definition_id": str(pipeline_id),
         "pipeline_url": run.get("_links", {}).get("web", {}).get("href", ""),
         "queued_time": datetime.now(timezone.utc).isoformat(),
-        "status": run.get("state", "inProgress"),
+        "status": normalize_run_status(run.get("state", "notStarted"), run.get("result")),
+        "result": run.get("result"),
+    }
+
+
+def get_pipeline_run(cloud, run_id, pipeline_definition_id=None):
+    config = get_connection_config()
+    pipeline_key = {"Azure": "azure_pipeline_id", "AWS": "aws_pipeline_id"}.get(cloud)
+    definition_id = pipeline_definition_id or (config.get(pipeline_key) if pipeline_key else None)
+    missing = [name for name, value in {
+        "organization": config.get("organization"),
+        "project": config.get("project"),
+        "pipeline_definition_id": definition_id,
+        "PAT": config.get("pat"),
+    }.items() if not value]
+    if missing:
+        raise RuntimeError("Azure DevOps status synchronization is missing: " + ", ".join(missing))
+
+    url = (
+        f"https://dev.azure.com/{config['organization']}/{config['project']}"
+        f"/_apis/pipelines/{definition_id}/runs/{run_id}?api-version=7.1"
+    )
+    response = requests.get(url, auth=("", config["pat"]), timeout=15)
+    response.raise_for_status()
+    run = response.json()
+    return {
+        "status": normalize_run_status(run.get("state"), run.get("result")),
+        "result": run.get("result"),
+        "pipeline_url": run.get("_links", {}).get("web", {}).get("href", ""),
+        "finished_time": run.get("finishedDate") if run.get("state") == "completed" else None,
     }

@@ -7,6 +7,7 @@ import {
   Typography,
   Divider,
   Stack,
+  Link,
 } from "@mui/material";
 
 function DeploymentDialog({
@@ -81,6 +82,27 @@ function DeploymentDialog({
             <b>Status:</b> {deployment.status}
 
           </Typography>
+
+          <Typography><b>Pipeline:</b> {deployment.pipeline_name}</Typography>
+
+          <Typography>
+            <b>Run:</b>{" "}
+            {deployment.pipeline_url ? (
+              <Link href={deployment.pipeline_url} target="_blank" rel="noopener noreferrer">
+                #{deployment.pipeline_run_id || deployment.pipeline_id}
+              </Link>
+            ) : (
+              `#${deployment.pipeline_run_id || deployment.pipeline_id}`
+            )}
+          </Typography>
+
+          {deployment.result && (
+            <Typography><b>Result:</b> {deployment.result}</Typography>
+          )}
+
+          {deployment.finished_time && (
+            <Typography><b>Finished:</b> {deployment.finished_time}</Typography>
+          )}
 
           <Typography>
 

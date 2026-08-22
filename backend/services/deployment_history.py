@@ -1,94 +1,145 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
-# ----------------------------------------
-# In-Memory Deployment History
-# ----------------------------------------
-
-deployment_history = []
+from database.database import get_connection
+from services.azure_devops import get_pipeline_run
 
 
-# ----------------------------------------
-# Generate Deployment ID
-# ----------------------------------------
-
-def generate_deployment_id():
-
-    deployment_number = len(deployment_history) + 1
-
-    return f"DEP-{deployment_number:05d}"
+ACTIVE_STATUSES = {"Queued", "Running", "Cancelling"}
 
 
-# ----------------------------------------
-# Save Deployment
-# ----------------------------------------
+def _now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _serialize(row):
+    if row is None:
+        return None
+    record = dict(row)
+    record["deployment_id"] = f"DEP-{record.pop('id'):05d}"
+    record["pipeline_id"] = record["pipeline_run_id"]
+    return record
+
+
+def _numeric_id(deployment_id):
+    try:
+        prefix, value = deployment_id.split("-", 1)
+        if prefix != "DEP":
+            raise ValueError
+        return int(value)
+    except (AttributeError, TypeError, ValueError) as error:
+        raise ValueError("Invalid deployment ID") from error
+
 
 def save_deployment(deployment, pipeline):
-
-    deployment_record = {
-
-        "deployment_id": generate_deployment_id(),
-
-        "cloud": deployment.cloud,
-
-        "workload": deployment.workload,
-
-        "environment": deployment.environment,
-
-        "region": deployment.region,
-
-        "status": pipeline["status"],
-
-        "pipeline_name": pipeline["pipeline_name"],
-
-        "pipeline_id": pipeline["pipeline_id"],
-
-        "provider": pipeline["provider"],
-
-        "created_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    }
-
-    deployment_history.append(deployment_record)
-
-    return deployment_record
-
-
-# ----------------------------------------
-# Get Deployment History
-# ----------------------------------------
-
-def get_deployment_history():
-
-    return deployment_history
+    now = _now()
+    connection = get_connection()
+    cursor = connection.execute(
+        """
+        INSERT INTO deployments (
+            cloud, workload, environment, region, status, pipeline_name,
+            pipeline_definition_id, pipeline_run_id, pipeline_url, provider,
+            result, sync_error, created_time, updated_time, finished_time
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL)
+        """,
+        (
+            deployment.cloud,
+            deployment.workload,
+            deployment.environment,
+            deployment.region,
+            pipeline["status"],
+            pipeline["pipeline_name"],
+            pipeline.get("pipeline_definition_id"),
+            pipeline["pipeline_id"],
+            pipeline.get("pipeline_url", ""),
+            pipeline["provider"],
+            pipeline.get("result"),
+            now,
+            now,
+        ),
+    )
+    connection.commit()
+    row = connection.execute(
+        "SELECT * FROM deployments WHERE id = ?", (cursor.lastrowid,)
+    ).fetchone()
+    connection.close()
+    return _serialize(row)
 
 
-# ----------------------------------------
-# Update Deployment Status
-# ----------------------------------------
+def _sync_active_deployments(connection):
+    rows = connection.execute(
+        """
+        SELECT * FROM deployments
+        WHERE status IN ('Queued', 'Running', 'Cancelling')
+        ORDER BY id DESC
+        """
+    ).fetchall()
+    for row in rows:
+        try:
+            run = get_pipeline_run(
+                cloud=row["cloud"],
+                run_id=row["pipeline_run_id"],
+                pipeline_definition_id=row["pipeline_definition_id"],
+            )
+            connection.execute(
+                """
+                UPDATE deployments
+                SET status = ?, result = ?, pipeline_url = ?, sync_error = NULL,
+                    updated_time = ?, finished_time = COALESCE(?, finished_time)
+                WHERE id = ?
+                """,
+                (
+                    run["status"],
+                    run.get("result"),
+                    run.get("pipeline_url") or row["pipeline_url"],
+                    _now(),
+                    run.get("finished_time"),
+                    row["id"],
+                ),
+            )
+        except Exception as error:
+            connection.execute(
+                "UPDATE deployments SET sync_error = ?, updated_time = ? WHERE id = ?",
+                (str(error)[:500], _now(), row["id"]),
+            )
+    connection.commit()
+
+
+def get_deployment_history(sync=True):
+    connection = get_connection()
+    if sync:
+        _sync_active_deployments(connection)
+    rows = connection.execute(
+        "SELECT * FROM deployments ORDER BY id DESC"
+    ).fetchall()
+    connection.close()
+    return [_serialize(row) for row in rows]
+
 
 def update_deployment_status(deployment_id, new_status):
+    numeric_id = _numeric_id(deployment_id)
+    connection = get_connection()
+    connection.execute(
+        "UPDATE deployments SET status = ?, updated_time = ? WHERE id = ?",
+        (new_status, _now(), numeric_id),
+    )
+    connection.commit()
+    row = connection.execute(
+        "SELECT * FROM deployments WHERE id = ?", (numeric_id,)
+    ).fetchone()
+    connection.close()
+    return _serialize(row)
 
-    for deployment in deployment_history:
 
-        if deployment["deployment_id"] == deployment_id:
-
-            deployment["status"] = new_status
-
-            return deployment
-
-    return None
-
-
-# ----------------------------------------
-# Find Deployment
-# ----------------------------------------
-
-def get_deployment(deployment_id):
-
-    for deployment in deployment_history:
-
-        if deployment["deployment_id"] == deployment_id:
-
-            return deployment
-
-    return None
+def get_deployment(deployment_id, sync=True):
+    numeric_id = _numeric_id(deployment_id)
+    connection = get_connection()
+    row = connection.execute(
+        "SELECT * FROM deployments WHERE id = ?", (numeric_id,)
+    ).fetchone()
+    if row and sync and row["status"] in ACTIVE_STATUSES:
+        _sync_active_deployments(connection)
+        row = connection.execute(
+            "SELECT * FROM deployments WHERE id = ?", (numeric_id,)
+        ).fetchone()
+    connection.close()
+    return _serialize(row)

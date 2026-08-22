@@ -93,10 +93,10 @@ def deploy(
 
 @router.get("/deployments")
 def get_deployments():
-
+    deployments = get_deployment_history(sync=True)
     return {
-        "count": len(get_deployment_history()),
-        "deployments": get_deployment_history()
+        "count": len(deployments),
+        "deployments": deployments
     }
 
 

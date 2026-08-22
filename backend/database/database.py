@@ -91,28 +91,31 @@ def initialize_database():
         """
     )
 
-    # --------------------------------------
-    # Model Playground Invocation History
-    # --------------------------------------
-
     cursor.execute(
         """
-        CREATE TABLE IF NOT EXISTS inference_runs (
+        CREATE TABLE IF NOT EXISTS deployments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            request_id TEXT UNIQUE NOT NULL,
-            username TEXT NOT NULL,
-            endpoint_name TEXT NOT NULL,
-            deployment_name TEXT NOT NULL,
+            cloud TEXT NOT NULL,
             workload TEXT NOT NULL,
-            input_preview TEXT NOT NULL,
-            prediction TEXT,
-            confidence REAL,
-            latency_ms INTEGER NOT NULL,
+            environment TEXT NOT NULL,
+            region TEXT NOT NULL,
             status TEXT NOT NULL,
-            error_message TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            pipeline_name TEXT NOT NULL,
+            pipeline_definition_id TEXT,
+            pipeline_run_id TEXT NOT NULL,
+            pipeline_url TEXT,
+            provider TEXT NOT NULL,
+            result TEXT,
+            sync_error TEXT,
+            created_time TEXT NOT NULL,
+            updated_time TEXT NOT NULL,
+            finished_time TEXT
         )
         """
+    )
+
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status)"
     )
 
         # --------------------------------------

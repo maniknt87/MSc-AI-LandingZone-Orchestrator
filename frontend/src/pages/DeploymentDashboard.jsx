@@ -17,6 +17,7 @@ import {
   Select,
   MenuItem,
   CircularProgress,
+  Link,
 } from "@mui/material";
 
 import { getDeployments } from "../services/api";
@@ -373,6 +374,7 @@ function getEnvironmentChip(environment) {
 
               <TableCell><b>Workload</b></TableCell>
               <TableCell><b>Status</b></TableCell>
+              <TableCell><b>Pipeline run</b></TableCell>
               <TableCell><b>Created</b></TableCell>
 
             </TableRow>
@@ -386,7 +388,7 @@ function getEnvironmentChip(environment) {
     <TableRow>
 
       <TableCell
-        colSpan={7}
+        colSpan={8}
         align="center"
         sx={{ py: 5 }}
       >
@@ -435,6 +437,21 @@ function getEnvironmentChip(environment) {
 
     <TableCell>
       {getStatusChip(deployment.status)}
+    </TableCell>
+
+    <TableCell>
+      {deployment.pipeline_url ? (
+        <Link
+          href={deployment.pipeline_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(event) => event.stopPropagation()}
+        >
+          #{deployment.pipeline_run_id || deployment.pipeline_id}
+        </Link>
+      ) : (
+        deployment.pipeline_run_id || deployment.pipeline_id
+      )}
     </TableCell>
 
     <TableCell>{deployment.created_time}</TableCell>
