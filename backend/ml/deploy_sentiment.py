@@ -6,6 +6,7 @@ from azure.ai.ml.entities import (
     Environment,
     ManagedOnlineDeployment,
     ManagedOnlineEndpoint,
+    Model,
 )
 from azure.identity import DefaultAzureCredential
 
@@ -22,6 +23,8 @@ WORKSPACE_NAME = os.environ.get(
 
 ENDPOINT_NAME = "sentiment-ai-4bb8b779"
 DEPLOYMENT_NAME = "sentiment-v1"
+MODEL_PATH = os.environ["AZURE_MODEL_PATH"]
+INSTANCE_TYPE = os.environ.get("AZURE_ML_INSTANCE_TYPE", "Standard_DS2_v2")
 
 
 def main():
@@ -62,6 +65,17 @@ def main():
 
     print("Environment ready.")
 
+    model = Model(
+        path=MODEL_PATH,
+        name="sentiment-distilbert-sst2",
+        version="1",
+        description="Cached DistilBERT SST-2 sentiment model",
+        type="custom_model",
+    )
+    print("Registering cached sentiment model...")
+    model = ml_client.models.create_or_update(model)
+    print(f"Model ready: {model.name}:{model.version}")
+
     # --------------------------------------------------
     # Create / update endpoint
     # --------------------------------------------------
@@ -88,11 +102,12 @@ def main():
         name=DEPLOYMENT_NAME,
         endpoint_name=ENDPOINT_NAME,
         environment=environment,
+        model=model,
         code_configuration=CodeConfiguration(
             code="backend/ml/sentiment",
             scoring_script="score.py",
         ),
-        instance_type="Standard_DS2_v2",
+        instance_type=INSTANCE_TYPE,
         instance_count=1,
     )
 

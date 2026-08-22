@@ -272,6 +272,33 @@ stages:
             echo "Terraform state container created."
           fi
 
+          echo "======================================"
+          echo "Checking persistent model artifact container"
+          echo "======================================"
+
+          az storage account blob-service-properties update \
+            --account-name "$STORAGE_ACCOUNT" \
+            --resource-group "$RESOURCE_GROUP" \
+            --enable-versioning true \
+            --output none
+
+          if az storage container show \
+            --name "model-artifacts" \
+            --account-name "$STORAGE_ACCOUNT" \
+            --auth-mode login \
+            --output none 2>/dev/null
+          then
+            echo "Model artifact container already exists."
+          else
+            az storage container create \
+              --name "model-artifacts" \
+              --account-name "$STORAGE_ACCOUNT" \
+              --auth-mode login \
+              --public-access off \
+              --output none
+            echo "Model artifact container created."
+          fi
+
 
           echo "======================================"
           echo "Terraform State Bootstrap Complete"
@@ -369,6 +396,9 @@ stages:
           echo "Terraform Plan"
           echo "======================================"
 
+          ENABLE_MONITORING=$(printf '%s' '${{ parameters.enableMonitoring }}' | tr '[:upper:]' '[:lower:]')
+          ENABLE_PRIVATE_ENDPOINT=$(printf '%s' '${{ parameters.enablePrivateEndpoint }}' | tr '[:upper:]' '[:lower:]')
+
           terraform -chdir=backend/terraform/azure plan \
             -input=false \
             -var='deployment_name=${{ parameters.deploymentName }}' \
@@ -381,8 +411,8 @@ stages:
             -var='hub_address_space=${{ parameters.hubAddressSpace }}' \
             -var='general_spoke_address_space=${{ parameters.generalSpokeAddressSpace }}' \
             -var='ai_spoke_address_space=${{ parameters.aiSpokeAddressSpace }}' \
-            -var='enableMonitoring=${{ lower(parameters.enableMonitoring) }}' \
-            -var='enablePrivateEndpoint=${{ lower(parameters.enablePrivateEndpoint) }}' \
+            -var="enableMonitoring=${ENABLE_MONITORING}" \
+            -var="enablePrivateEndpoint=${ENABLE_PRIVATE_ENDPOINT}" \
             -out=tfplan
 
 
@@ -571,39 +601,9 @@ stages:
           SUBSCRIPTION_ID=$(az account show --query id --output tsv)
           SUBSCRIPTION_SUFFIX=$(echo "$SUBSCRIPTION_ID" | tr -d '-' | cut -c1-8)
           STORAGE_ACCOUNT="aigov${ENVIRONMENT}${SUBSCRIPTION_SUFFIX}"
-          ACR_NAME="acrai${ENVIRONMENT}${SUBSCRIPTION_SUFFIX}"
           RESOURCE_GROUP="rg-${LANDING_ZONE}-ai-${ENVIRONMENT}"
-          WORKSPACE_NAME="aml-${ENVIRONMENT}"
-          WORKSPACE_RESOURCE_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.MachineLearningServices/workspaces/${WORKSPACE_NAME}"
 
           cleanup() {
-            EXIT_CODE=$?
-            set +e
-
-            echo "======================================"
-            echo "Restoring Azure ML workspace private access"
-            echo "======================================"
-
-            az resource update \
-              --ids "$WORKSPACE_RESOURCE_ID" \
-              --set properties.publicNetworkAccess=Disabled \
-              --output none
-
-            echo "Azure ML workspace public access disabled."
-
-            echo "======================================"
-            echo "Restoring Container Registry private access"
-            echo "======================================"
-
-            az acr update \
-              --name "$ACR_NAME" \
-              --resource-group "$RESOURCE_GROUP" \
-              --default-action Deny \
-              --public-network-enabled false \
-              --output none
-
-            echo "Container Registry public access disabled."
-
             echo "======================================"
             echo "Restoring Storage private access"
             echo "======================================"
@@ -614,8 +614,6 @@ stages:
               --public-network-access Disabled
 
             echo "Storage public access disabled."
-
-            return "$EXIT_CODE"
           }
 
           trap cleanup EXIT
@@ -643,38 +641,10 @@ stages:
 
 
           echo "======================================"
-          echo "Temporarily enabling Azure ML workspace access"
+          echo "Waiting for Storage configuration"
           echo "======================================"
 
-          az resource update \
-            --ids "$WORKSPACE_RESOURCE_ID" \
-            --set \
-              properties.publicNetworkAccess=Enabled \
-              properties.managedNetwork.isolationMode=Disabled \
-            --output none
-
-          echo "Azure ML workspace public access enabled."
-
-
-          echo "======================================"
-          echo "Temporarily enabling Container Registry access"
-          echo "======================================"
-
-          az acr update \
-            --name "$ACR_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --public-network-enabled true \
-            --default-action Allow \
-            --output none
-
-          echo "Container Registry public access enabled."
-
-
-          echo "======================================"
-          echo "Waiting for network configuration"
-          echo "======================================"
-
-          sleep 30
+          sleep 15
 
 
           echo "======================================"
@@ -691,7 +661,61 @@ stages:
 
           python -m pip install \
             azure-ai-ml \
-            azure-identity
+            azure-identity \
+            huggingface_hub
+
+
+          echo "======================================"
+          echo "Preparing persistent Azure model artifact"
+          echo "======================================"
+
+          ARTIFACT_STORAGE_ACCOUNT="tfstateai${SUBSCRIPTION_SUFFIX}"
+          ARTIFACT_CONTAINER="model-artifacts"
+          ARTIFACT_BLOB="models/sentiment/v1/model.tar.gz"
+          ARTIFACT_DIRECTORY="$(Pipeline.Workspace)/azure-model-cache"
+          ARTIFACT_ARCHIVE="$ARTIFACT_DIRECTORY/model.tar.gz"
+          MODEL_DIRECTORY="$ARTIFACT_DIRECTORY/sentiment-v1"
+          mkdir -p "$ARTIFACT_DIRECTORY" "$MODEL_DIRECTORY"
+
+          ARTIFACT_EXISTS=$(az storage blob exists \
+            --account-name "$ARTIFACT_STORAGE_ACCOUNT" \
+            --container-name "$ARTIFACT_CONTAINER" \
+            --name "$ARTIFACT_BLOB" \
+            --auth-mode login \
+            --query exists \
+            --output tsv)
+
+          if [ "$ARTIFACT_EXISTS" = "true" ]; then
+            echo "Reusing cached model artifact."
+            az storage blob download \
+              --account-name "$ARTIFACT_STORAGE_ACCOUNT" \
+              --container-name "$ARTIFACT_CONTAINER" \
+              --name "$ARTIFACT_BLOB" \
+              --file "$ARTIFACT_ARCHIVE" \
+              --auth-mode login \
+              --overwrite true \
+              --output none
+          else
+            echo "Cached artifact not found; packaging it once."
+            python backend/ml/package_azure_model.py \
+              --model sentiment \
+              --output "$ARTIFACT_ARCHIVE"
+            az storage blob upload \
+              --account-name "$ARTIFACT_STORAGE_ACCOUNT" \
+              --container-name "$ARTIFACT_CONTAINER" \
+              --name "$ARTIFACT_BLOB" \
+              --file "$ARTIFACT_ARCHIVE" \
+              --auth-mode login \
+              --overwrite false \
+              --metadata model-id=distilbert-sst2 model-version=1 \
+              --output none
+          fi
+
+          tar -xzf "$ARTIFACT_ARCHIVE" -C "$MODEL_DIRECTORY"
+          test -f "$MODEL_DIRECTORY/config.json"
+          test -f "$MODEL_DIRECTORY/model.safetensors"
+          export AZURE_MODEL_PATH="$MODEL_DIRECTORY"
+          export AZURE_ML_INSTANCE_TYPE="${{ parameters.vmSize }}"
 
 
           echo "======================================"
@@ -704,7 +728,7 @@ stages:
 
           export AZURE_RESOURCE_GROUP="$RESOURCE_GROUP"
 
-          export AZURE_ML_WORKSPACE="$WORKSPACE_NAME"
+          export AZURE_ML_WORKSPACE="aml-${ENVIRONMENT}"
 
           echo "Subscription:"
           echo "$AZURE_SUBSCRIPTION_ID"
@@ -819,41 +843,6 @@ stages:
           echo "======================================"
 
           terraform -chdir=backend/terraform/azure state list
-
-
-          echo "======================================"
-          echo "Deleting Azure ML online endpoints"
-          echo "======================================"
-
-          AI_RESOURCE_GROUP="rg-${{ lower(parameters.deploymentName) }}-ai-${{ lower(parameters.environment) }}"
-          AI_WORKSPACE="aml-${{ lower(parameters.environment) }}"
-
-          if ! az extension show --name ml --output none 2>/dev/null; then
-            az extension add --name ml --yes
-          fi
-
-          if az ml workspace show \
-            --name "$AI_WORKSPACE" \
-            --resource-group "$AI_RESOURCE_GROUP" \
-            --output none 2>/dev/null
-          then
-            while IFS= read -r ENDPOINT_NAME; do
-              if [ -n "$ENDPOINT_NAME" ]; then
-                echo "Deleting endpoint: $ENDPOINT_NAME"
-                az ml online-endpoint delete \
-                  --name "$ENDPOINT_NAME" \
-                  --resource-group "$AI_RESOURCE_GROUP" \
-                  --workspace-name "$AI_WORKSPACE" \
-                  --yes
-              fi
-            done < <(az ml online-endpoint list \
-              --resource-group "$AI_RESOURCE_GROUP" \
-              --workspace-name "$AI_WORKSPACE" \
-              --query '[].name' \
-              --output tsv)
-          else
-            echo "Azure ML workspace is absent; no endpoints to delete."
-          fi
 
 
           echo "======================================"

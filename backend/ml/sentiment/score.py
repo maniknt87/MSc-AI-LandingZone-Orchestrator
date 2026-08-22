@@ -1,7 +1,8 @@
 import json
 import logging
+import os
 
-from transformers import pipeline
+from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
 
 
 logger = logging.getLogger(__name__)
@@ -14,10 +15,16 @@ def init():
 
     logger.info("Loading sentiment model...")
 
-    classifier = pipeline(
-        "sentiment-analysis",
-        model="distilbert/distilbert-base-uncased-finetuned-sst-2-english",
+    model_directory = os.environ.get("AZUREML_MODEL_DIR")
+    if not model_directory:
+        raise RuntimeError("AZUREML_MODEL_DIR was not supplied by Azure ML.")
+    logger.info("Loading cached sentiment model from %s", model_directory)
+    tokenizer = AutoTokenizer.from_pretrained(model_directory, local_files_only=True)
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_directory,
+        local_files_only=True,
     )
+    classifier = pipeline("sentiment-analysis", model=model, tokenizer=tokenizer)
 
     logger.info("Sentiment model loaded successfully.")
 
