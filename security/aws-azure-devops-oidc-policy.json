@@ -93,6 +93,12 @@
       ]
     },
     {
+      "Sid": "InspectNetworkFirewallLogDeliveries",
+      "Effect": "Allow",
+      "Action": "logs:ListLogDeliveries",
+      "Resource": "*"
+    },
+    {
       "Sid": "ManageProjectSageMakerResources",
       "Effect": "Allow",
       "Action": [
