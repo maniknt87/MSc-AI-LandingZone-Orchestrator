@@ -52,63 +52,141 @@ parameters:
 variables:
   terraformDirectory: 'backend/terraform/aws'
   awsServiceConnection: 'AWS-Terraform-Connection'
-  # The state bucket is in Mumbai. Define awsTfStateBucket and awsTfLockTable
-  # in the Azure DevOps pipeline UI or an authorized variable group.
+
+  # AWS Terraform remote state configuration
   awsTfStateRegion: 'ap-south-1'
+  awsTfStateBucket: 'mani-terraform-state-699754982224'
+  awsTfLockTable: 'mani-terraform-lock'
 
 stages:
+
+# ============================================================
+# VALIDATE
+# ============================================================
 - stage: Validate
   jobs:
   - job: Validate
     steps:
     - checkout: self
+
     - bash: |
         set -euo pipefail
+
         test '${{ parameters.cloud }}' = 'AWS'
+
         terraform fmt -check -recursive "$(terraformDirectory)"
-        terraform -chdir="$(terraformDirectory)" init -backend=false -input=false
+
+        terraform -chdir="$(terraformDirectory)" init \
+          -backend=false \
+          -input=false
+
         terraform -chdir="$(terraformDirectory)" validate
+
       displayName: 'Validate AWS request and Terraform'
 
+
+# ============================================================
+# PLAN
+# ============================================================
 - stage: Plan
   dependsOn: Validate
+
   jobs:
   - job: TerraformPlan
+
     steps:
     - checkout: self
+
     - task: AWSShellScript@1
       displayName: 'Create AWS Terraform plan'
+
       inputs:
         awsCredentials: '$(awsServiceConnection)'
         regionName: 'ap-south-1'
         scriptType: inline
+
         inlineScript: |
           set -euo pipefail
+
+          # ----------------------------------------------------
+          # Validate and map requested region
+          # ----------------------------------------------------
           case '${{ parameters.region }}' in
-            'South India') AWS_REGION='ap-south-1' ;;
-            'US East (N. Virginia)') AWS_REGION='us-east-1' ;;
-            'Europe (Ireland)') AWS_REGION='eu-west-1' ;;
-            *) echo 'Region is not approved by this pipeline.'; exit 1 ;;
+            'South India')
+              AWS_REGION='ap-south-1'
+              ;;
+            'US East (N. Virginia)')
+              AWS_REGION='us-east-1'
+              ;;
+            'Europe (Ireland)')
+              AWS_REGION='eu-west-1'
+              ;;
+            *)
+              echo 'Region is not approved by this pipeline.'
+              exit 1
+              ;;
           esac
+
+          # ----------------------------------------------------
+          # Terraform remote state configuration
+          # ----------------------------------------------------
           STATE_BUCKET="$(awsTfStateBucket)"
           LOCK_TABLE="$(awsTfLockTable)"
+
           test -n "$STATE_BUCKET"
           test -n "$LOCK_TABLE"
-          case "$STATE_BUCKET" in '$('*')') echo 'awsTfStateBucket is not configured.'; exit 1 ;; esac
-          case "$LOCK_TABLE" in '$('*')') echo 'awsTfLockTable is not configured.'; exit 1 ;; esac
+
+          case "$STATE_BUCKET" in
+            '$('*')')
+              echo 'awsTfStateBucket is not configured.'
+              exit 1
+              ;;
+          esac
+
+          case "$LOCK_TABLE" in
+            '$('*')')
+              echo 'awsTfLockTable is not configured.'
+              exit 1
+              ;;
+          esac
+
           STATE_KEY="aws-${{ lower(parameters.deploymentName) }}-${{ lower(parameters.environment) }}.tfstate"
+
+          # ----------------------------------------------------
+          # Boolean Terraform variables
+          # ----------------------------------------------------
           ENABLE_MONITORING=$(printf '%s' '${{ parameters.enableMonitoring }}' | tr '[:upper:]' '[:lower:]')
+
           ENABLE_PRIVATE_ENDPOINT=$(printf '%s' '${{ parameters.enablePrivateEndpoint }}' | tr '[:upper:]' '[:lower:]')
-          terraform -chdir="$(terraformDirectory)" init -reconfigure -input=false \
+
+          # ----------------------------------------------------
+          # Terraform initialization
+          # ----------------------------------------------------
+          terraform -chdir="$(terraformDirectory)" init \
+            -reconfigure \
+            -input=false \
             -backend-config="bucket=$STATE_BUCKET" \
             -backend-config="key=$STATE_KEY" \
             -backend-config="region=$(awsTfStateRegion)" \
             -backend-config="dynamodb_table=$LOCK_TABLE" \
             -backend-config="encrypt=true"
+
+          # ----------------------------------------------------
+          # Terraform plan mode
+          # ----------------------------------------------------
           PLAN_MODE=''
-          if [ '${{ parameters.action }}' = 'destroy' ]; then PLAN_MODE='-destroy'; fi
+
+          if [ '${{ parameters.action }}' = 'destroy' ]; then
+            PLAN_MODE='-destroy'
+          fi
+
+          # ----------------------------------------------------
+          # Terraform plan
+          # ----------------------------------------------------
           terraform -chdir="$(terraformDirectory)" plan \
-            $PLAN_MODE -input=false -out=tfplan \
+            $PLAN_MODE \
+            -input=false \
+            -out=tfplan \
             -var="aws_region=$AWS_REGION" \
             -var='deployment_name=${{ parameters.deploymentName }}' \
             -var='environment=${{ parameters.environment }}' \
@@ -121,44 +199,106 @@ stages:
             -var='ai_spoke_address_space=${{ parameters.aiSpokeAddressSpace }}' \
             -var="enable_monitoring=${ENABLE_MONITORING}" \
             -var="enable_private_endpoint=${ENABLE_PRIVATE_ENDPOINT}"
+
+    # --------------------------------------------------------
+    # Publish Terraform plan
+    # --------------------------------------------------------
     - task: PublishPipelineArtifact@1
+      displayName: 'Publish AWS Terraform plan'
+
       inputs:
         targetPath: '$(terraformDirectory)/tfplan'
         artifact: 'aws-terraform-plan'
 
+
+# ============================================================
+# APPLY
+# ============================================================
 - stage: Apply
   dependsOn: Plan
+
   jobs:
   - deployment: TerraformApply
+
     environment: 'aws-${{ lower(parameters.environment) }}'
+
     strategy:
       runOnce:
         deploy:
           steps:
+
           - checkout: self
+
+          # --------------------------------------------------
+          # Download Terraform plan
+          # --------------------------------------------------
           - task: DownloadPipelineArtifact@2
+            displayName: 'Download AWS Terraform plan'
+
             inputs:
               artifactName: 'aws-terraform-plan'
               targetPath: '$(Pipeline.Workspace)/aws-terraform-plan'
+
+          # --------------------------------------------------
+          # Apply approved Terraform plan
+          # --------------------------------------------------
           - task: AWSShellScript@1
             displayName: 'Apply approved AWS plan'
+
             inputs:
               awsCredentials: '$(awsServiceConnection)'
               regionName: 'ap-south-1'
               scriptType: inline
+
               inlineScript: |
                 set -euo pipefail
+
+                # ------------------------------------------------
+                # Validate and map requested region
+                # ------------------------------------------------
                 case '${{ parameters.region }}' in
-                  'South India') AWS_REGION='ap-south-1' ;;
-                  'US East (N. Virginia)') AWS_REGION='us-east-1' ;;
-                  'Europe (Ireland)') AWS_REGION='eu-west-1' ;;
+                  'South India')
+                    AWS_REGION='ap-south-1'
+                    ;;
+                  'US East (N. Virginia)')
+                    AWS_REGION='us-east-1'
+                    ;;
+                  'Europe (Ireland)')
+                    AWS_REGION='eu-west-1'
+                    ;;
+                  *)
+                    echo 'Region is not approved by this pipeline.'
+                    exit 1
+                    ;;
                 esac
+
+                # ------------------------------------------------
+                # Terraform state key
+                # ------------------------------------------------
                 STATE_KEY="aws-${{ lower(parameters.deploymentName) }}-${{ lower(parameters.environment) }}.tfstate"
-                terraform -chdir="$(terraformDirectory)" init -reconfigure -input=false \
+
+                # ------------------------------------------------
+                # Terraform initialization
+                # ------------------------------------------------
+                terraform -chdir="$(terraformDirectory)" init \
+                  -reconfigure \
+                  -input=false \
                   -backend-config="bucket=$(awsTfStateBucket)" \
                   -backend-config="key=$STATE_KEY" \
                   -backend-config="region=$(awsTfStateRegion)" \
                   -backend-config="dynamodb_table=$(awsTfLockTable)" \
                   -backend-config="encrypt=true"
-                cp "$(Pipeline.Workspace)/aws-terraform-plan/tfplan" "$(terraformDirectory)/tfplan"
-                terraform -chdir="$(terraformDirectory)" apply -input=false tfplan
+
+                # ------------------------------------------------
+                # Copy approved plan
+                # ------------------------------------------------
+                cp \
+                  "$(Pipeline.Workspace)/aws-terraform-plan/tfplan" \
+                  "$(terraformDirectory)/tfplan"
+
+                # ------------------------------------------------
+                # Apply approved plan
+                # ------------------------------------------------
+                terraform -chdir="$(terraformDirectory)" apply \
+                  -input=false \
+                  tfplan
