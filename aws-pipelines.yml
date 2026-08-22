@@ -55,6 +55,8 @@ variables:
   # The state bucket is in Mumbai. Define awsTfStateBucket and awsTfLockTable
   # in the Azure DevOps pipeline UI or an authorized variable group.
   awsTfStateRegion: 'ap-south-1'
+  awsTfStateBucket: 'mani-terraform-state-699754982224'
+  awsTfLockTable: 'mani-terraform-lock'
 
 stages:
 - stage: Validate
