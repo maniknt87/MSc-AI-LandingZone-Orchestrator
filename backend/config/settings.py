@@ -37,12 +37,14 @@ AZDO_PAT = os.getenv("AZDO_PAT", "")
 AZDO_BRANCH = os.getenv("AZDO_BRANCH", "refs/heads/main")
 
 # Model Playground endpoints. Credentials remain in the backend environment.
+AZURE_SUBSCRIPTION_ID = os.getenv("AZURE_SUBSCRIPTION_ID", "")
 AZURE_ML_ENDPOINT_NAME = os.getenv("AZURE_ML_ENDPOINT_NAME", "sentiment-ai-4bb8b779")
 AZURE_ML_DEPLOYMENT_NAME = os.getenv("AZURE_ML_DEPLOYMENT_NAME", "sentiment-v1")
 AZURE_ML_MODEL_VERSION = os.getenv("AZURE_ML_MODEL_VERSION", "1")
 AZURE_ML_SCORING_URI = os.getenv("AZURE_ML_SCORING_URI", "")
 AZURE_ML_ENDPOINT_KEY = os.getenv("AZURE_ML_ENDPOINT_KEY", "")
 AZURE_ML_REQUEST_TIMEOUT = int(os.getenv("AZURE_ML_REQUEST_TIMEOUT", "60"))
+AZURE_ML_CREDENTIAL_CACHE_SECONDS = int(os.getenv("AZURE_ML_CREDENTIAL_CACHE_SECONDS", "300"))
 
 AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
 AWS_PROFILE = os.getenv("AWS_PROFILE", "")
