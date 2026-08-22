@@ -51,7 +51,7 @@ parameters:
 
 variables:
   terraformDirectory: 'backend/terraform/aws'
-  awsServiceConnection: 'AWS-Terraform-Connection'
+  awsServiceConnection: 'AWS-Terraform-OIDC-Connection'
   # Resource names are non-secret and are kept with the pipeline definition so
   # both application-triggered and manual apply/destroy runs use the same state.
   awsTfStateBucket: 'mani-terraform-state-699754982224'
@@ -89,6 +89,12 @@ stages:
         scriptType: inline
         inlineScript: |
           set -euo pipefail
+          CALLER_ARN=$(aws sts get-caller-identity --query Arn --output text)
+          echo "Authenticated AWS identity: $CALLER_ARN"
+          case "$CALLER_ARN" in
+            arn:aws:sts::699754982224:assumed-role/AzureDevOpsTerraformOIDCRole/*) ;;
+            *) echo "Unexpected AWS identity; refusing to run Terraform."; exit 1 ;;
+          esac
           case '${{ parameters.region }}' in
             'South India') AWS_REGION='ap-south-1' ;;
             'US East (N. Virginia)') AWS_REGION='us-east-1' ;;
