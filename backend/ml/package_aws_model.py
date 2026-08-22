@@ -61,7 +61,7 @@ def predict_fn(text, model_bundle):
 def output_fn(prediction, accept="application/json"):
     if accept != "application/json":
         raise ValueError(f"Unsupported accept type: {accept}")
-    return json.dumps(prediction), accept
+    return prediction
 '''
 
 

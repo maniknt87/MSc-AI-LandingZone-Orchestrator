@@ -180,8 +180,16 @@ def _invoke_azure(deployment, text, username):
 
 def _extract_aws_prediction(result):
     candidate = result
-    while isinstance(candidate, list) and candidate:
-        candidate = candidate[0]
+    # Accept both the canonical Hugging Face response and the legacy v2
+    # package response, which wrapped a JSON string and content type in a list.
+    for _ in range(4):
+        if isinstance(candidate, list) and candidate:
+            candidate = candidate[0]
+            continue
+        if isinstance(candidate, str):
+            candidate = json.loads(candidate)
+            continue
+        break
     if not isinstance(candidate, dict):
         raise ValueError("The SageMaker model returned an unsupported response format.")
     prediction, confidence = candidate.get("label"), candidate.get("score")

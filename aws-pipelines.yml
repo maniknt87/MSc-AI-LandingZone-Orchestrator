@@ -55,8 +55,6 @@ variables:
   # The state bucket is in Mumbai. Define awsTfStateBucket and awsTfLockTable
   # in the Azure DevOps pipeline UI or an authorized variable group.
   awsTfStateRegion: 'ap-south-1'
-  awsTfStateBucket: 'mani-terraform-state-699754982224'
-  awsTfLockTable: 'mani-terraform-lock'
 
 stages:
 - stage: Validate
@@ -216,7 +214,7 @@ stages:
           EXECUTION_ROLE_ARN=$(aws iam get-role --role-name "$ROLE_NAME" --query 'Role.Arn' --output text)
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           MODEL_BUCKET="ai-model-artifacts-${AWS_ACCOUNT_ID}-${AWS_REGION}"
-          MODEL_KEY="models/sentiment/v2/model.tar.gz"
+          MODEL_KEY="models/sentiment/v3/model.tar.gz"
           MODEL_DATA_URL="s3://${MODEL_BUCKET}/${MODEL_KEY}"
           python3 -m venv .aws-ml-venv
           . .aws-ml-venv/bin/activate
