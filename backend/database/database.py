@@ -117,6 +117,16 @@ def initialize_database():
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status)"
     )
+    cursor.execute("PRAGMA table_info(deployments)")
+    deployment_columns = {column["name"] for column in cursor.fetchall()}
+    if "action" not in deployment_columns:
+        cursor.execute("ALTER TABLE deployments ADD COLUMN action TEXT NOT NULL DEFAULT 'apply'")
+    if "request_payload" not in deployment_columns:
+        cursor.execute("ALTER TABLE deployments ADD COLUMN request_payload TEXT")
+    if "parent_deployment_id" not in deployment_columns:
+        cursor.execute("ALTER TABLE deployments ADD COLUMN parent_deployment_id INTEGER")
+    if "retry_of_deployment_id" not in deployment_columns:
+        cursor.execute("ALTER TABLE deployments ADD COLUMN retry_of_deployment_id INTEGER")
 
     cursor.execute(
         """

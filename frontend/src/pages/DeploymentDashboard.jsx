@@ -18,9 +18,10 @@ import {
   MenuItem,
   CircularProgress,
   Link,
+  Alert,
 } from "@mui/material";
 
-import { getDeployments } from "../services/api";
+import { destroyDeployment, getDeployments, retryDeployment } from "../services/api";
 import DashboardCard from "../components/dashboard/DashboardCard";
 import DeploymentDialog from "../deployment/DeploymentDialog";
 
@@ -35,6 +36,9 @@ function DeploymentDashboard() {
 
   const [openDialog, setOpenDialog] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [destroying, setDestroying] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [actionMessage, setActionMessage] = useState(null);
   // ---------------------------------------
   // Load Deployments
   // ---------------------------------------
@@ -241,11 +245,57 @@ function getEnvironmentChip(environment) {
 
   }
 
+  async function handleDestroy(deployment) {
+    const confirmed = window.confirm(
+      `Destroy all resources for ${deployment.deployment_id}? The Terraform state and retained model artifacts will remain.`
+    );
+    if (!confirmed) return;
+    try {
+      setDestroying(true);
+      setActionMessage(null);
+      const response = await destroyDeployment(deployment.deployment_id);
+      setActionMessage({ severity: "success", text: response.message });
+      setOpenDialog(false);
+      await loadDeployments();
+    } catch (error) {
+      setActionMessage({
+        severity: "error",
+        text: error.response?.data?.detail || "Unable to queue the destroy pipeline.",
+      });
+    } finally {
+      setDestroying(false);
+    }
+  }
+
+  async function handleRetry(deployment) {
+    const confirmed = window.confirm(
+      `Start a fresh retry for ${deployment.deployment_id} using its original deployment parameters?`
+    );
+    if (!confirmed) return;
+    try {
+      setRetrying(true);
+      setActionMessage(null);
+      const response = await retryDeployment(deployment.deployment_id);
+      setActionMessage({ severity: "success", text: response.message });
+      setOpenDialog(false);
+      await loadDeployments();
+    } catch (error) {
+      setActionMessage({
+        severity: "error",
+        text: error.response?.data?.detail || "Unable to queue the deployment retry.",
+      });
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   return (
 
     <Box>
 
       <Box sx={{ mb: 3 }}><Typography variant="h4">Deployments</Typography><Typography color="text.secondary" sx={{ mt: .75 }}>Track landing-zone pipeline activity and deployment health.</Typography></Box>
+
+      {actionMessage && <Alert severity={actionMessage.severity} sx={{ mb: 2 }}>{actionMessage.text}</Alert>}
 
       <Grid
         container
@@ -471,6 +521,10 @@ function getEnvironmentChip(environment) {
   open={openDialog}
   deployment={selectedDeployment}
   onClose={() => setOpenDialog(false)}
+  onDestroy={handleDestroy}
+  destroying={destroying}
+  onRetry={handleRetry}
+  retrying={retrying}
 />
     </Box>
 

@@ -18,6 +18,14 @@ function DeploymentDialog({
 
   onClose,
 
+  onDestroy,
+
+  destroying = false,
+
+  onRetry,
+
+  retrying = false,
+
 }) {
 
   if (!deployment) {
@@ -83,6 +91,12 @@ function DeploymentDialog({
 
           </Typography>
 
+          <Typography><b>Action:</b> {deployment.action || "apply"}</Typography>
+
+          {deployment.retry_of && <Typography><b>Retry of:</b> {deployment.retry_of}</Typography>}
+
+          {deployment.destroy_of && <Typography><b>Destroy of:</b> {deployment.destroy_of}</Typography>}
+
           <Typography><b>Pipeline:</b> {deployment.pipeline_name}</Typography>
 
           <Typography>
@@ -115,6 +129,28 @@ function DeploymentDialog({
       </DialogContent>
 
       <DialogActions>
+
+        {deployment.can_retry && (
+          <Button
+            color="warning"
+            variant="outlined"
+            disabled={retrying || destroying}
+            onClick={() => onRetry(deployment)}
+          >
+            {retrying ? "Queuing retry…" : "Retry deployment"}
+          </Button>
+        )}
+
+        {deployment.can_destroy && (
+          <Button
+            color="error"
+            variant="outlined"
+            disabled={destroying || retrying}
+            onClick={() => onDestroy(deployment)}
+          >
+            {destroying ? "Queuing destroy…" : "Destroy resources"}
+          </Button>
+        )}
 
         <Button
           variant="contained"

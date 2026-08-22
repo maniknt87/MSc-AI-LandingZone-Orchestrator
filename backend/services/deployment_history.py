@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import json
 
 from database.database import get_connection
 from services.azure_devops import get_pipeline_run
@@ -17,6 +18,22 @@ def _serialize(row):
     record = dict(row)
     record["deployment_id"] = f"DEP-{record.pop('id'):05d}"
     record["pipeline_id"] = record["pipeline_run_id"]
+    payload = record.pop("request_payload", None)
+    record["request"] = json.loads(payload) if payload else None
+    record["can_destroy"] = bool(
+        record.get("action", "apply") == "apply"
+        and record["status"] == "Completed"
+        and record["request"]
+    )
+    record["can_retry"] = bool(
+        record.get("action", "apply") == "apply"
+        and record["status"] == "Failed"
+        and record["request"]
+    )
+    if record.get("retry_of_deployment_id"):
+        record["retry_of"] = f"DEP-{record['retry_of_deployment_id']:05d}"
+    if record.get("parent_deployment_id"):
+        record["destroy_of"] = f"DEP-{record['parent_deployment_id']:05d}"
     return record
 
 
@@ -30,7 +47,13 @@ def _numeric_id(deployment_id):
         raise ValueError("Invalid deployment ID") from error
 
 
-def save_deployment(deployment, pipeline):
+def save_deployment(
+    deployment,
+    pipeline,
+    action="apply",
+    parent_deployment_id=None,
+    retry_of_deployment_id=None,
+):
     now = _now()
     connection = get_connection()
     cursor = connection.execute(
@@ -38,8 +61,9 @@ def save_deployment(deployment, pipeline):
         INSERT INTO deployments (
             cloud, workload, environment, region, status, pipeline_name,
             pipeline_definition_id, pipeline_run_id, pipeline_url, provider,
-            result, sync_error, created_time, updated_time, finished_time
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL)
+            result, sync_error, created_time, updated_time, finished_time,
+            action, request_payload, parent_deployment_id, retry_of_deployment_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, ?, ?, ?, ?)
         """,
         (
             deployment.cloud,
@@ -55,6 +79,10 @@ def save_deployment(deployment, pipeline):
             pipeline.get("result"),
             now,
             now,
+            action,
+            json.dumps(deployment.model_dump()),
+            parent_deployment_id,
+            retry_of_deployment_id,
         ),
     )
     connection.commit()
@@ -96,6 +124,15 @@ def _sync_active_deployments(connection):
                     row["id"],
                 ),
             )
+            if (
+                row["action"] == "destroy"
+                and row["parent_deployment_id"]
+                and run["status"] == "Completed"
+            ):
+                connection.execute(
+                    "UPDATE deployments SET status = 'Destroyed', updated_time = ? WHERE id = ?",
+                    (_now(), row["parent_deployment_id"]),
+                )
         except Exception as error:
             connection.execute(
                 "UPDATE deployments SET sync_error = ?, updated_time = ? WHERE id = ?",
@@ -143,3 +180,43 @@ def get_deployment(deployment_id, sync=True):
         ).fetchone()
     connection.close()
     return _serialize(row)
+
+
+def get_destroy_source(deployment_id):
+    numeric_id = _numeric_id(deployment_id)
+    connection = get_connection()
+    row = connection.execute("SELECT * FROM deployments WHERE id = ?", (numeric_id,)).fetchone()
+    if row is None:
+        connection.close()
+        return None, None
+    active_destroy = connection.execute(
+        """
+        SELECT id FROM deployments
+        WHERE parent_deployment_id = ? AND action = 'destroy'
+          AND status IN ('Queued', 'Running', 'Cancelling')
+        LIMIT 1
+        """,
+        (numeric_id,),
+    ).fetchone()
+    connection.close()
+    return _serialize(row), bool(active_destroy)
+
+
+def get_retry_source(deployment_id):
+    numeric_id = _numeric_id(deployment_id)
+    connection = get_connection()
+    row = connection.execute("SELECT * FROM deployments WHERE id = ?", (numeric_id,)).fetchone()
+    if row is None:
+        connection.close()
+        return None, None
+    active_retry = connection.execute(
+        """
+        SELECT id FROM deployments
+        WHERE retry_of_deployment_id = ?
+          AND status IN ('Queued', 'Running', 'Cancelling')
+        LIMIT 1
+        """,
+        (numeric_id,),
+    ).fetchone()
+    connection.close()
+    return _serialize(row), bool(active_retry)

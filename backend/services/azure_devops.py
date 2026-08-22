@@ -84,7 +84,7 @@ def configure_connection(organization, project, azure_pipeline_id, aws_pipeline_
     }
 
 
-def queue_pipeline(deployment):
+def queue_pipeline(deployment, action="apply"):
     config = get_connection_config()
     cloud = str(deployment.cloud).strip()
     pipeline_key = {"Azure": "azure_pipeline_id", "AWS": "aws_pipeline_id"}.get(cloud)
@@ -107,7 +107,7 @@ def queue_pipeline(deployment):
         f"/_apis/pipelines/{pipeline_id}/runs?api-version=7.1"
     )
     parameters = {
-        "action": "apply",
+        "action": action,
         "cloud": cloud,
         "deploymentName": deployment.deploymentName,
         "environment": deployment.environment,
