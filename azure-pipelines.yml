@@ -707,7 +707,7 @@ stages:
               --file "$ARTIFACT_ARCHIVE" \
               --auth-mode login \
               --overwrite false \
-              --metadata model-id=distilbert-sst2 model-version=1 \
+              --metadata model_id=distilbert-sst2 model_version=1 \
               --output none
           fi
 
