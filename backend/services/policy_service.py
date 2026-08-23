@@ -25,9 +25,9 @@ AI_WORKLOADS = [
 
 AI_COMPUTE_SIZES = {
     "Azure": {
-        "Development": {"Standard_DS3_v2", "Standard_NC4as_T4_v3"},
-        "Testing": {"Standard_DS3_v2", "Standard_NC4as_T4_v3", "Standard_NC8as_T4_v3"},
-        "Production": {"Standard_DS3_v2", "Standard_NC4as_T4_v3", "Standard_NC8as_T4_v3", "Standard_NC16as_T4_v3"},
+        "Development": {"Standard_DS2_v2", "Standard_NC4as_T4_v3"},
+        "Testing": {"Standard_DS2_v2", "Standard_NC4as_T4_v3", "Standard_NC8as_T4_v3"},
+        "Production": {"Standard_DS2_v2", "Standard_NC4as_T4_v3", "Standard_NC8as_T4_v3", "Standard_NC16as_T4_v3"},
     },
     "AWS": {
         "Development": {"ml.m5.xlarge", "ml.c6i.xlarge"},

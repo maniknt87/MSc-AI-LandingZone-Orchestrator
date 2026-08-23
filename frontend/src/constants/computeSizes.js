@@ -1,6 +1,6 @@
 export const computeSizes = {
   Azure: [
-    { value: "Standard_DS3_v2", label: "Standard_DS3_v2", detail: "CPU · Development and lightweight inference" },
+    { value: "Standard_DS2_v2", label: "Standard_DS2_v2", detail: "CPU · Development and lightweight inference" },
     { value: "Standard_NC4as_T4_v3", label: "Standard_NC4as_T4_v3", detail: "1× NVIDIA T4 · Cost-efficient GPU inference" },
     { value: "Standard_NC8as_T4_v3", label: "Standard_NC8as_T4_v3", detail: "1× NVIDIA T4 · Higher CPU and memory" },
     { value: "Standard_NC16as_T4_v3", label: "Standard_NC16as_T4_v3", detail: "1× NVIDIA T4 · Production inference" },
@@ -15,9 +15,9 @@ export const computeSizes = {
 
 export const approvedComputeSizes = {
   Azure: {
-    Development: ["Standard_DS3_v2", "Standard_NC4as_T4_v3"],
-    Testing: ["Standard_DS3_v2", "Standard_NC4as_T4_v3", "Standard_NC8as_T4_v3"],
-    Production: ["Standard_DS3_v2", "Standard_NC4as_T4_v3", "Standard_NC8as_T4_v3", "Standard_NC16as_T4_v3"],
+    Development: ["Standard_DS2_v2", "Standard_NC4as_T4_v3"],
+    Testing: ["Standard_DS2_v2", "Standard_NC4as_T4_v3", "Standard_NC8as_T4_v3"],
+    Production: ["Standard_DS2_v2", "Standard_NC4as_T4_v3", "Standard_NC8as_T4_v3", "Standard_NC16as_T4_v3"],
   },
   AWS: {
     Development: ["ml.m5.xlarge", "ml.c6i.xlarge"],
