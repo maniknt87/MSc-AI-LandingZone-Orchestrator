@@ -28,9 +28,18 @@ BASE_DIRECTORY = Path(__file__).resolve().parent.parent
 TERRAFORM_DIRECTORY = BASE_DIRECTORY / "terraform"
 
 # Azure DevOps connection values are supplied as environment variables.
-# Never place a PAT in source control.
-AZDO_ORGANIZATION = os.getenv("AZDO_ORGANIZATION", "")
-AZDO_PROJECT = os.getenv("AZDO_PROJECT", "")
+# Organization and project are non-secret defaults; never place a PAT in source control.
+def _azure_devops_setting(name, default, placeholder):
+    value = os.getenv(name, "").strip()
+    return default if not value or value == placeholder else value
+
+
+AZDO_ORGANIZATION = _azure_devops_setting(
+    "AZDO_ORGANIZATION", "manikanta-devops", "your-organization"
+)
+AZDO_PROJECT = _azure_devops_setting(
+    "AZDO_PROJECT", "LandingZone-Orchestrator", "your-project"
+)
 AZDO_AZURE_PIPELINE_ID = os.getenv("AZDO_AZURE_PIPELINE_ID", os.getenv("AZDO_PIPELINE_ID", ""))
 AZDO_AWS_PIPELINE_ID = os.getenv("AZDO_AWS_PIPELINE_ID", "")
 AZDO_PAT = os.getenv("AZDO_PAT", "")

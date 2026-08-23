@@ -30,6 +30,10 @@ class UpdateApplicationUserRequest(BaseModel):
     role: Literal["Administrator", "Contributor", "Read Only"]
     allowed_region: str = Field(min_length=2, max_length=100)
 
+
+class ResetApplicationUserPasswordRequest(BaseModel):
+    password: str = Field(min_length=8, max_length=128)
+
 def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(security)):
     if not credentials:
         raise HTTPException(status_code=401, detail="Authentication required.")
@@ -97,6 +101,29 @@ def update_user(
     if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="User not found.")
     return {"success": True, "message": "Application role updated successfully."}
+
+
+@router.patch("/{username}/password")
+def reset_user_password(
+    username: str,
+    request: ResetApplicationUserPasswordRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    if current_user["role"] != "Administrator":
+        raise HTTPException(status_code=403, detail="Only administrators can reset passwords.")
+
+    from services.auth_service import hash_password
+
+    connection = get_connection()
+    cursor = connection.execute(
+        "UPDATE users SET password_hash = ? WHERE lower(username) = lower(?)",
+        (hash_password(request.password), username.strip()),
+    )
+    connection.commit()
+    connection.close()
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="User not found.")
+    return {"success": True, "message": "Temporary password reset successfully."}
 
 @router.get("/{username}/roles")
 def get_user_roles(username: str, current_user: dict = Depends(get_current_user)):
@@ -227,3 +254,31 @@ def remove_cloud_role(
         "success": True,
         "message": "Cloud role removed successfully."
     }
+
+
+@router.delete("/{username}")
+def delete_user(username: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "Administrator":
+        raise HTTPException(status_code=403, detail="Only administrators can delete users.")
+
+    normalized_username = username.strip()
+    if normalized_username.lower() == current_user["username"].lower():
+        raise HTTPException(status_code=400, detail="You cannot delete your own account.")
+    if normalized_username.lower() == "admin":
+        raise HTTPException(status_code=400, detail="The built-in administrator cannot be deleted.")
+
+    connection = get_connection()
+    try:
+        user = connection.execute(
+            "SELECT id FROM users WHERE lower(username) = lower(?)",
+            (normalized_username,),
+        ).fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found.")
+        connection.execute("DELETE FROM user_cloud_roles WHERE user_id = ?", (user["id"],))
+        connection.execute("DELETE FROM users WHERE id = ?", (user["id"],))
+        connection.commit()
+    finally:
+        connection.close()
+
+    return {"success": True, "message": "Application user deleted successfully."}

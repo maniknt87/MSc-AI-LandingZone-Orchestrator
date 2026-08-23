@@ -21,8 +21,8 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import {
-  assignUserCloudRole, createUser, getUserRoles, getUsers,
-  removeUserCloudRole, updateUser,
+  assignUserCloudRole, createUser, deleteUser, getUserRoles, getUsers,
+  removeUserCloudRole, resetUserPassword, updateUser,
 } from "../services/api";
 
 const PLATFORM_ROLES = ["Administrator", "Contributor", "Read Only"];
@@ -40,6 +40,7 @@ function UsersRoles() {
   const [newUser, setNewUser] = useState(emptyUser);
   const [selectedUser, setSelectedUser] = useState(null);
   const [cloudRole, setCloudRole] = useState(emptyCloudRole);
+  const [temporaryPassword, setTemporaryPassword] = useState("");
 
   let currentUser = null;
   try { currentUser = JSON.parse(localStorage.getItem("currentUser") || "null"); } catch { currentUser = null; }
@@ -59,6 +60,7 @@ function UsersRoles() {
     try {
       setSelectedUser(await getUserRoles(username));
       setCloudRole(emptyCloudRole);
+      setTemporaryPassword("");
       setManageOpen(true);
     } catch (error) { setNotice({ severity: "error", text: errorMessage(error, "Unable to load roles.") }); }
   };
@@ -105,6 +107,28 @@ function UsersRoles() {
     finally { setSaving(false); }
   };
 
+  const resetPassword = async () => {
+    setSaving(true);
+    try {
+      await resetUserPassword(selectedUser.username, temporaryPassword);
+      setTemporaryPassword("");
+      setNotice({ severity: "success", text: `Temporary password reset for ${selectedUser.username}.` });
+    } catch (error) { setNotice({ severity: "error", text: errorMessage(error, "Unable to reset password.") }); }
+    finally { setSaving(false); }
+  };
+
+  const removeUser = async (username) => {
+    if (!window.confirm(`Delete application user “${username}”? This also removes their application cloud-role mappings.`)) return;
+    setSaving(true);
+    try {
+      await deleteUser(username);
+      setManageOpen(false); setSelectedUser(null);
+      setNotice({ severity: "success", text: `Application user ${username} deleted.` });
+      await loadUsers();
+    } catch (error) { setNotice({ severity: "error", text: errorMessage(error, "Unable to delete user.") }); }
+    finally { setSaving(false); }
+  };
+
   return <Box>
     <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ sm: "center" }} spacing={2} mb={3}>
       <Box>
@@ -145,6 +169,14 @@ function UsersRoles() {
           <TextField fullWidth label="Allowed region" disabled={!isAdministrator} value={selectedUser.allowed_region || "All approved regions"} onChange={(e) => setSelectedUser({ ...selectedUser, allowed_region: e.target.value })} />
           {isAdministrator && <Button variant="contained" onClick={savePlatformRole} disabled={saving}>Save</Button>}
         </Stack>
+        {isAdministrator && selectedUser.username.toLowerCase() !== "admin" && <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
+          <Typography variant="subtitle1" fontWeight={700} gutterBottom>Account access</Typography>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "flex-start" }}>
+            <TextField fullWidth label="New temporary password" type="password" helperText="Minimum 8 characters; share it securely" value={temporaryPassword} onChange={(e) => setTemporaryPassword(e.target.value)} />
+            <Button variant="outlined" onClick={resetPassword} disabled={saving || temporaryPassword.length < 8} sx={{ minWidth: 150, mt: { sm: .5 } }}>Reset password</Button>
+            {selectedUser.username !== currentUser?.username && <Button color="error" variant="outlined" onClick={() => removeUser(selectedUser.username)} disabled={saving} sx={{ minWidth: 125, mt: { sm: .5 } }}>Delete user</Button>}
+          </Stack>
+        </Paper>}
         <Typography variant="h6" gutterBottom>Cloud access mappings</Typography>
         {selectedUser.cloud_roles.length === 0 && <Typography color="text.secondary" mb={2}>No cloud roles assigned.</Typography>}
         <Stack spacing={1} mb={3}>{selectedUser.cloud_roles.map((role) => <Paper variant="outlined" sx={{ p: 1.5 }} key={`${role.cloud}-${role.account_name}-${role.cloud_role}`}><Stack direction={{ xs: "column", sm: "row" }} alignItems={{ sm: "center" }} justifyContent="space-between" spacing={1}>

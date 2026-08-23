@@ -219,11 +219,12 @@ def authenticate_user(
             role,
             allowed_region
         FROM users
-        WHERE username = ?
+        WHERE (lower(username) = lower(?) OR lower(email) = lower(?))
         AND password_hash = ?
         """,
         (
-            username,
+            username.strip(),
+            username.strip(),
             password_hash
         )
     )

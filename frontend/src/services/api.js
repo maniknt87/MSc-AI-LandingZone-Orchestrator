@@ -62,6 +62,8 @@ export const retryDeployment = async (deploymentId) => {
 export const getUsers = async () => (await API.get("/users")).data;
 export const createUser = async (user) => (await API.post("/users", user)).data;
 export const updateUser = async (username, user) => (await API.patch(`/users/${username}`, user)).data;
+export const resetUserPassword = async (username, password) => (await API.patch(`/users/${username}/password`, { password })).data;
+export const deleteUser = async (username) => (await API.delete(`/users/${username}`)).data;
 export const getUserRoles = async (username) => (await API.get(`/users/${username}/roles`)).data;
 export const assignUserCloudRole = async (role) => (await API.post("/users/roles", role)).data;
 export const removeUserCloudRole = async (role) => (await API.delete("/users/roles", { data: role })).data;

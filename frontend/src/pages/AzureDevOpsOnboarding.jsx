@@ -11,7 +11,14 @@ import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import VpnKeyRoundedIcon from "@mui/icons-material/VpnKeyRounded";
 import { getAzureDevOpsConnection, saveAzureDevOpsConnection } from "../services/api";
 
-const emptyForm = { organization: "", project: "", azure_pipeline_id: "", aws_pipeline_id: "", branch: "refs/heads/main", pat: "" };
+const emptyForm = {
+  organization: "manikanta-devops",
+  project: "LandingZone-Orchestrator",
+  azure_pipeline_id: "",
+  aws_pipeline_id: "",
+  branch: "refs/heads/main",
+  pat: "",
+};
 
 function AzureDevOpsOnboarding({ user }) {
   const isAdmin = user?.role === "Administrator";
@@ -27,7 +34,7 @@ function AzureDevOpsOnboarding({ user }) {
     getAzureDevOpsConnection().then((data) => {
       if (!active) return;
       setStatus(data);
-      setForm((current) => ({ ...current, organization: data.organization || "", project: data.project || "", azure_pipeline_id: data.azure_pipeline_id || "", aws_pipeline_id: data.aws_pipeline_id || "", branch: data.branch || "refs/heads/main" }));
+      setForm((current) => ({ ...current, organization: data.organization || current.organization, project: data.project || current.project, azure_pipeline_id: data.azure_pipeline_id || "", aws_pipeline_id: data.aws_pipeline_id || "", branch: data.branch || "refs/heads/main" }));
     }).catch(() => active && setMessage({ severity: "error", text: "Unable to load Azure DevOps connection status." })).finally(() => active && setLoading(false));
     return () => { active = false; };
   }, [isAdmin]);
