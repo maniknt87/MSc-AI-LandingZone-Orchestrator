@@ -8,6 +8,7 @@ from azure.ai.ml.entities import (
     ManagedOnlineEndpoint,
     Model,
 )
+from azure.core.exceptions import HttpResponseError
 from azure.identity import DefaultAzureCredential
 
 
@@ -128,9 +129,21 @@ def main():
 
     print("Creating/updating sentiment deployment...")
 
-    ml_client.online_deployments.begin_create_or_update(
-        deployment
-    ).result()
+    try:
+        ml_client.online_deployments.begin_create_or_update(
+            deployment
+        ).result()
+    except HttpResponseError as error:
+        if "unrecoverable state" not in str(error).lower():
+            raise
+        print("Removing unrecoverable Azure ML deployment and recreating it...")
+        ml_client.online_deployments.begin_delete(
+            name=DEPLOYMENT_NAME,
+            endpoint_name=ENDPOINT_NAME,
+        ).result()
+        ml_client.online_deployments.begin_create_or_update(
+            deployment
+        ).result()
 
     print("Sentiment deployment ready.")
 
