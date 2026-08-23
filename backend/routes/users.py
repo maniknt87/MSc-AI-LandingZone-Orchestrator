@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Literal
 
 from database.database import get_connection
-from services.auth_service import verify_access_token
+from services.auth_service import create_user, verify_access_token
 
 router = APIRouter(prefix="/users", tags=["Users & Cloud Roles"])
 
@@ -15,6 +16,19 @@ class CloudRoleRequest(BaseModel):
     account_name: str
     account_id: str = ""
     cloud_role: str
+
+
+class CreateApplicationUserRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=50, pattern=r"^[A-Za-z0-9._-]+$")
+    email: str = Field(min_length=5, max_length=254)
+    password: str = Field(min_length=8, max_length=128)
+    role: Literal["Administrator", "Contributor", "Read Only"] = "Read Only"
+    allowed_region: str = Field(default="All approved regions", min_length=2, max_length=100)
+
+
+class UpdateApplicationUserRequest(BaseModel):
+    role: Literal["Administrator", "Contributor", "Read Only"]
+    allowed_region: str = Field(min_length=2, max_length=100)
 
 def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(security)):
     if not credentials:
@@ -44,6 +58,45 @@ def get_users(current_user: dict = Depends(get_current_user)):
         "role": current_user["role"],
         "allowed_region": current_user["allowed_region"]
     }]}
+
+
+@router.post("")
+def add_user(request: CreateApplicationUserRequest, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "Administrator":
+        raise HTTPException(status_code=403, detail="Only administrators can add users.")
+    result = create_user(
+        username=request.username,
+        email=request.email,
+        password=request.password,
+        role=request.role,
+        allowed_region=request.allowed_region,
+    )
+    if not result["success"]:
+        message = "Username or email already exists." if "UNIQUE" in result["message"] else result["message"]
+        raise HTTPException(status_code=400, detail=message)
+    return result
+
+
+@router.patch("/{username}")
+def update_user(
+    username: str,
+    request: UpdateApplicationUserRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    if current_user["role"] != "Administrator":
+        raise HTTPException(status_code=403, detail="Only administrators can update users.")
+    if username == current_user["username"] and request.role != "Administrator":
+        raise HTTPException(status_code=400, detail="You cannot remove your own administrator role.")
+    connection = get_connection()
+    cursor = connection.execute(
+        "UPDATE users SET role = ?, allowed_region = ? WHERE username = ?",
+        (request.role, request.allowed_region, username),
+    )
+    connection.commit()
+    connection.close()
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="User not found.")
+    return {"success": True, "message": "Application role updated successfully."}
 
 @router.get("/{username}/roles")
 def get_user_roles(username: str, current_user: dict = Depends(get_current_user)):
