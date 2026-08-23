@@ -48,6 +48,21 @@ def main():
 
     print("Azure ML client created successfully.")
 
+    workspace = ml_client.workspaces.get(WORKSPACE_NAME)
+    managed_network = workspace.managed_network
+    managed_network_status = getattr(managed_network, "status", None)
+    status_value = getattr(managed_network_status, "value", managed_network_status)
+    print(f"Managed network status: {status_value or 'unknown'}")
+    if str(status_value).lower() != "succeeded":
+        print("Provisioning Azure ML managed network...")
+        ml_client.workspaces.begin_provision_network(
+            workspace_name=WORKSPACE_NAME,
+            include_spark=False,
+        ).result()
+        workspace = ml_client.workspaces.get(WORKSPACE_NAME)
+        final_status = getattr(workspace.managed_network, "status", None)
+        print(f"Managed network provisioning completed: {final_status}")
+
     # --------------------------------------------------
     # Create / update inference environment
     # --------------------------------------------------
