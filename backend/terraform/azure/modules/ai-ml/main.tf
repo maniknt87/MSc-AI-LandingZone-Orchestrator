@@ -247,6 +247,10 @@ resource "azurerm_machine_learning_workspace" "this" {
 
   public_network_access_enabled = false
 
+  managed_network {
+    isolation_mode = "AllowInternetOutbound"
+  }
+
   identity {
     type = "SystemAssigned"
   }
