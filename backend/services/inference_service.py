@@ -36,6 +36,10 @@ def _aws_session():
 def _aws_is_configured():
     if not AWS_SAGEMAKER_ENDPOINT_NAME:
         return False
+    try:
+        return _aws_session().get_credentials() is not None
+    except (BotoCoreError, ClientError):
+        return False
 
 
 def _azure_slug(value):
@@ -43,17 +47,16 @@ def _azure_slug(value):
 
 
 def _dynamic_azure_deployments():
-    """Build playground targets from successful application deployment history."""
+    """Build the active playground target from completed deployment lifecycle history."""
     if not AZURE_SUBSCRIPTION_ID:
         return []
     connection = get_connection()
     try:
         rows = connection.execute(
             """
-            SELECT id, environment, request_payload
+            SELECT id, action, environment, request_payload
             FROM deployments
             WHERE cloud = 'Azure'
-              AND action = 'apply'
               AND status = 'Completed'
               AND request_payload IS NOT NULL
             ORDER BY id DESC
@@ -80,6 +83,10 @@ def _dynamic_azure_deployments():
         if identity in seen:
             continue
         seen.add(identity)
+        # The newest completed lifecycle action is authoritative. A completed
+        # destroy means this historical deployment must not remain selectable.
+        if str(row["action"] or "apply").lower() != "apply":
+            continue
         deployments.append({
             "id": f"azure:history:{row['id']}",
             "endpoint_name": AZURE_ML_ENDPOINT_NAME,
@@ -97,11 +104,10 @@ def _dynamic_azure_deployments():
             "workspace_name": f"aml-{_azure_slug(environment)}",
             "dynamic_credentials": True,
         })
+        # Azure deployments currently share one configured endpoint name, so
+        # only the newest active deployment can be invoked by this playground.
+        break
     return deployments
-    try:
-        return _aws_session().get_credentials() is not None
-    except (BotoCoreError, ClientError):
-        return False
 
 
 def list_playground_deployments():

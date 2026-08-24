@@ -27,3 +27,8 @@ tfplan
 
 # Application database
 backend/database/*.db
+*.db
+*.sqlite
+*.sqlite3
+
+if (-not (Select-String -Path .gitignore -Pattern '^\.codex-report-work/$' -Quiet)) { Add-Content -Path .gitignore -Value "`r`n# Temporary Codex report workspace`r`n.codex-report-work/" }
